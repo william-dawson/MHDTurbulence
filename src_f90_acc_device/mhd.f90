@@ -202,10 +202,10 @@ module basicmod
         end if
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(statevevtor_cuda( &
-             adr(acc_deviceptr(d), adr(acc_deviceptr(v1), adr(acc_deviceptr(v2) &
-           , adr(acc_deviceptr(v3), adr(acc_deviceptr(ei), adr(acc_deviceptr(b1) &
-           , adr(acc_deviceptr(b2), adr(acc_deviceptr(b3), adr(acc_deviceptr(bp) &
-           , adr(acc_deviceptr(Xcomp), adr(acc_deviceptr(p), adr(acc_deviceptr(svc) &
+             adr(acc_deviceptr(d)), adr(acc_deviceptr(v1)), adr(acc_deviceptr(v2)) &
+           , adr(acc_deviceptr(v3)), adr(acc_deviceptr(ei)), adr(acc_deviceptr(b1)) &
+           , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
+           , adr(acc_deviceptr(Xcomp)), adr(acc_deviceptr(p)), adr(acc_deviceptr(svc)) &
            , real(gam, c_double) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , 1_c_int, int(in-1, c_int) &
@@ -219,7 +219,7 @@ module basicmod
         if (mflx /= 10) error stop 'cuda_flux1: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux1_cuda( &
-             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux1), adr(acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(chg)) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie+1, c_int) &
            , int(js, c_int), int(je, c_int) &
@@ -232,7 +232,7 @@ module basicmod
         if (mflx /= 10) error stop 'cuda_flux2: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux2_cuda( &
-             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux2), adr(acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux2)), adr(acc_deviceptr(chg)) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
            , int(js, c_int), int(je+1, c_int) &
@@ -245,7 +245,7 @@ module basicmod
         if (mflx /= 10) error stop 'cuda_flux3: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux3_cuda( &
-             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux3), adr(acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux3)), adr(acc_deviceptr(chg)) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
            , int(js, c_int), int(je, c_int) &
@@ -258,15 +258,15 @@ module basicmod
         if (ncomp /= 1) error stop 'cuda_updateconsv: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(updateconsv_cuda( &
-             adr(acc_deviceptr(nflux1), adr(acc_deviceptr(nflux2) &
-           , adr(acc_deviceptr(nflux3) &
-           , adr(acc_deviceptr(d), adr(acc_deviceptr(et), adr(acc_deviceptr(mv1) &
-           , adr(acc_deviceptr(mv2), adr(acc_deviceptr(mv3), adr(acc_deviceptr(b1) &
-           , adr(acc_deviceptr(b2), adr(acc_deviceptr(b3), adr(acc_deviceptr(bp) &
-           , adr(acc_deviceptr(DXcomp) &
-           , adr(acc_deviceptr(grvsrc1), adr(acc_deviceptr(grvsrc2) &
-           , adr(acc_deviceptr(grvsrc3) &
-           , adr(acc_deviceptr(x1a), adr(acc_deviceptr(x2a), adr(acc_deviceptr(x3a) &
+             adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(nflux2)) &
+           , adr(acc_deviceptr(nflux3)) &
+           , adr(acc_deviceptr(d)), adr(acc_deviceptr(et)), adr(acc_deviceptr(mv1)) &
+           , adr(acc_deviceptr(mv2)), adr(acc_deviceptr(mv3)), adr(acc_deviceptr(b1)) &
+           , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
+           , adr(acc_deviceptr(DXcomp)) &
+           , adr(acc_deviceptr(grvsrc1)), adr(acc_deviceptr(grvsrc2)) &
+           , adr(acc_deviceptr(grvsrc3)) &
+           , adr(acc_deviceptr(x1a)), adr(acc_deviceptr(x2a)), adr(acc_deviceptr(x3a)) &
            , real(dt, c_double) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
