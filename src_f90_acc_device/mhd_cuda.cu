@@ -42,41 +42,64 @@ __global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
     double* __restrict__ p_, double* __restrict__ svc_,
     double gamc, double gamc1, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2) {
-  // 3D grid: x = i (32/block), y = j (8/block), z = k; two i-neighbour
-  // cells per thread for memory-level parallelism (the kernel is
-  // DRAM-latency-bound at CPI ~120 with DRAM under 40% busy).
-  // gamc = gam*(gam-1) arrives precomputed so the product folds once,
-  // and the two /rho divisions share one hoisted reciprocal (one FP64
-  // division costs a ~12-instruction Newton sequence plus IEEE
-  // slow-path guards when inlined by nvcc).
-  #pragma unroll
-  for (int c = 0; c < 2; ++c) {
-    const int i = blockIdx.x * 64 + c * 32 + threadIdx.x;
-    const int j = blockIdx.y * 8 + threadIdx.y;
-    const int k = blockIdx.z;
-    if (i > i2 - i1 || j > j2 - j1) continue;
-    long long ci = (long long)(i1 - 1 + i) +
-                   (long long)in_ * (j1 - 1 + j) +
-                   (long long)in_ * jn_ * (k1 - 1 + k);
-    double dv  = d_[ci];
-    double v1v = v1_[ci], v2v = v2_[ci], v3v = v3_[ci];
-    double eiv = ei_[ci];
-    double b1v = b1_[ci], b2v = b2_[ci], b3v = b3_[ci], bpv = bp_[ci];
-    double xv  = xcomp_[ci];
-    // Scalar accesses throughout: nvfortran packs the acc declare
-    // create arrays with 8-byte-granular offsets (every pointer here is
-    // 8 mod 16), so 16-byte vector accesses would fault. The packer
-    // offsets are not controllable from source; revisit with
-    // acc_map_data if the double2 paths are ever worth restoring.
-    double inv = 1.0 / dv;
-    double* q = svc_ + ci * 12;
-    q[0]  = dv;   q[1]  = v1v;  q[2]  = v2v;  q[3]  = v3v;
-    q[4]  = eiv * inv;
-    q[5]  = gamc1 * eiv;
-    q[6]  = sqrt(gamc * eiv * inv);
-    q[7]  = b1v;  q[8]  = b2v;  q[9]  = b3v;
-    q[10] = bpv;  q[11] = xv;
-    p_[ci] = gamc1 * eiv;
+  // 3D grid: x = i (32/block), y = j (8/block), z = k; two cells per
+  // thread with BOTH cells' loads issued before either compute -- the
+  // kernel is DRAM-latency-bound (CPI ~120, DRAM < 40% busy), so the
+  // point is memory-level parallelism, not amortized overhead.
+  // gamc = gam*(gam-1) arrives precomputed, and the two /rho divisions
+  // share one hoisted reciprocal (one FP64 division costs a
+  // ~12-instruction Newton sequence plus IEEE slow-path guards when
+  // inlined by nvcc).
+  const int j = blockIdx.y * 8 + threadIdx.y;
+  const int k = blockIdx.z;
+  const int i0 = blockIdx.x * 64 + threadIdx.x;
+  const int i1c = i0 + 32;
+  const bool ok0 = (i0 <= i2 - i1) && (j <= j2 - j1);
+  const bool ok1 = (i1c <= i2 - i1) && (j <= j2 - j1);
+  const long long cj = (long long)in_ * (j1 - 1 + j) +
+                       (long long)in_ * jn_ * (k1 - 1 + k);
+  const long long ci0 = (long long)(i1 - 1 + i0) + cj;
+  const long long ci1 = (long long)(i1 - 1 + i1c) + cj;
+  // Scalar accesses throughout: nvfortran packs the acc declare create
+  // arrays with 8-byte-granular offsets (every pointer here is 8 mod
+  // 16), so 16-byte vector accesses would fault. The packer offsets
+  // are not controllable from source; revisit with acc_map_data if the
+  // double2 paths are ever worth restoring.
+  double dv0 = 0, v1v0 = 0, v2v0 = 0, v3v0 = 0, eiv0 = 0;
+  double b1v0 = 0, b2v0 = 0, b3v0 = 0, bpv0 = 0, xv0 = 0;
+  double dv1 = 0, v1v1 = 0, v2v1 = 0, v3v1 = 0, eiv1 = 0;
+  double b1v1 = 0, b2v1 = 0, b3v1 = 0, bpv1 = 0, xv1 = 0;
+  if (ok0) {
+    dv0 = d_[ci0]; v1v0 = v1_[ci0]; v2v0 = v2_[ci0]; v3v0 = v3_[ci0];
+    eiv0 = ei_[ci0]; b1v0 = b1_[ci0]; b2v0 = b2_[ci0]; b3v0 = b3_[ci0];
+    bpv0 = bp_[ci0]; xv0 = xcomp_[ci0];
+  }
+  if (ok1) {
+    dv1 = d_[ci1]; v1v1 = v1_[ci1]; v2v1 = v2_[ci1]; v3v1 = v3_[ci1];
+    eiv1 = ei_[ci1]; b1v1 = b1_[ci1]; b2v1 = b2_[ci1]; b3v1 = b3_[ci1];
+    bpv1 = bp_[ci1]; xv1 = xcomp_[ci1];
+  }
+  if (ok0) {
+    double inv = 1.0 / dv0;
+    double* q = svc_ + ci0 * 12;
+    q[0]  = dv0;  q[1]  = v1v0;  q[2]  = v2v0;  q[3]  = v3v0;
+    q[4]  = eiv0 * inv;
+    q[5]  = gamc1 * eiv0;
+    q[6]  = sqrt(gamc * eiv0 * inv);
+    q[7]  = b1v0;  q[8]  = b2v0;  q[9]  = b3v0;
+    q[10] = bpv0;  q[11] = xv0;
+    p_[ci0] = gamc1 * eiv0;
+  }
+  if (ok1) {
+    double inv = 1.0 / dv1;
+    double* q = svc_ + ci1 * 12;
+    q[0]  = dv1;  q[1]  = v1v1;  q[2]  = v2v1;  q[3]  = v3v1;
+    q[4]  = eiv1 * inv;
+    q[5]  = gamc1 * eiv1;
+    q[6]  = sqrt(gamc * eiv1 * inv);
+    q[7]  = b1v1;  q[8]  = b2v1;  q[9]  = b3v1;
+    q[10] = bpv1;  q[11] = xv1;
+    p_[ci1] = gamc1 * eiv1;
   }
 }
 
