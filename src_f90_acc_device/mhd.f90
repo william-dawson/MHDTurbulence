@@ -197,7 +197,7 @@ module basicmod
         if (nhyd /= 12 .or. ncomp /= 1) then
            error stop 'cuda_statevevtor: requires ncomp=1 (nhyd=12)'
         end if
-        sptr = adr(acc_get_cuda_stream(acc_async_sync))
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
         call cuda_check(statevevtor_cuda( &
              adr(acc_deviceptr(d)), adr(acc_deviceptr(v1)), adr(acc_deviceptr(v2)) &
            , adr(acc_deviceptr(v3)), adr(acc_deviceptr(ei)), adr(acc_deviceptr(b1)) &
@@ -214,7 +214,7 @@ module basicmod
       subroutine cuda_flux1()
         integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux1: requires ncomp=1'
-        sptr = adr(acc_get_cuda_stream(acc_async_sync))
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
         call cuda_check(flux1_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(chg)) &
            , in, jn, kn &
@@ -227,7 +227,7 @@ module basicmod
       subroutine cuda_flux2()
         integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux2: requires ncomp=1'
-        sptr = adr(acc_get_cuda_stream(acc_async_sync))
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
         call cuda_check(flux2_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux2)), adr(acc_deviceptr(chg)) &
            , in, jn, kn &
@@ -240,7 +240,7 @@ module basicmod
       subroutine cuda_flux3()
         integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux3: requires ncomp=1'
-        sptr = adr(acc_get_cuda_stream(acc_async_sync))
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
         call cuda_check(flux3_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux3)), adr(acc_deviceptr(chg)) &
            , in, jn, kn &
@@ -253,7 +253,7 @@ module basicmod
       subroutine cuda_updateconsv()
         integer(8) :: sptr
         if (ncomp /= 1) error stop 'cuda_updateconsv: requires ncomp=1'
-        sptr = adr(acc_get_cuda_stream(acc_async_sync))
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
         call cuda_check(updateconsv_cuda( &
              adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(nflux2)) &
            , adr(acc_deviceptr(nflux3)) &
