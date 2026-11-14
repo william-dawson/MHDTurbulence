@@ -58,7 +58,7 @@ endif
 .f90.o:
 	${fc} ${fopt} ${foptopenacc} -c $<
 
-OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o $(CUDA_OBJ)
+OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o gravforce.o $(CUDA_OBJ)
 
 config.o: config.f90
 mpiroutines.o: mpiroutines.f90 config.o
@@ -66,6 +66,12 @@ mhd.o: mhd.f90 mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc} -Mpreprocess ${CPPDEFS} -c $<
 updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc_uc} -Mpreprocess ${CPPDEFS} -c $<
+# GravForce lives in its own unit: inserting the cuda_kernels_f90 glue
+# module into mhd.f90 changed nvfortran's codegen for this loop and
+# re-triggered the unsound-LDG.128 misalignment fault (same class as
+# the odd-in pad workaround) at the first GravForce region.
+gravforce.o: gravforce.f90 mhd.o mpiroutines.o config.o
+	${fc} ${fopt} ${foptopenacc} -c $<
 mhd_cuda.o: mhd_cuda.cu
 	nvcc -O3 -gencode arch=compute_100,code=sm_100 -c $< -o $@
 boundary.o: boundary.f90 mhd.o mpiroutines.o config.o
