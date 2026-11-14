@@ -49,7 +49,8 @@ CPPDEFS += -DUSE_CUDA_FLUX
 endif
 ifneq ($(strip $(CPPDEFS)),)
 OBJS += mhd_cuda.o
-LDLIBS += -L$(CUDA_HOME)/lib64 -lcudart -lstdc++
+CUDA_LIBDIR := $(shell dirname $$(dirname $$(which nvcc)))/../cuda/13.2/targets/sbsa-linux/lib
+LDLIBS += -L$(CUDA_LIBDIR) -lcudart -lstdc++
 endif
 
 .SUFFIXES: .f90 .o
