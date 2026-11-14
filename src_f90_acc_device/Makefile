@@ -48,7 +48,7 @@ ifneq ($(filter flux,$(CUDA_ARMS)),)
 CPPDEFS += -DUSE_CUDA_FLUX
 endif
 ifneq ($(strip $(CPPDEFS)),)
-OBJS += mhd_cuda.o
+CUDA_OBJ := mhd_cuda.o
 CUDA_LIBDIR := $(shell dirname $$(dirname $$(which nvcc)))/../cuda/13.2/targets/sbsa-linux/lib
 LDLIBS += -L$(CUDA_LIBDIR) -lcudart -lstdc++
 endif
@@ -58,7 +58,7 @@ endif
 .f90.o:
 	${fc} ${fopt} ${foptopenacc} -c $<
 
-OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o
+OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o $(CUDA_OBJ)
 
 config.o: config.f90
 mpiroutines.o: mpiroutines.f90 config.o
