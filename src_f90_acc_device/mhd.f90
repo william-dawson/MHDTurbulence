@@ -96,7 +96,9 @@ module basicmod
       real(8),dimension(in,jn,kn):: grvsrc1,grvsrc2,grvsrc3
 
 !$acc declare create(chg)
+#ifndef USE_CUDA_DATA_MAP
 !$acc declare create(svc,nflux1,nflux2,nflux3)
+#endif
 !$acc declare create(grvsrc1,grvsrc2,grvsrc3)
       end module fluxmod
 
@@ -177,6 +179,32 @@ module basicmod
       end interface
 
       contains
+
+      subroutine cuda_data_map_init()
+! svc and the three flux arrays live on manually-allocated, 256-byte-
+! aligned device memory (the acc packer aligns module arrays to 8
+! bytes, blocking every 16-byte vector load/store). The OpenACC
+! runtime keeps the mapping and every acc kernel uses it transparently;
+! host-side Fortran code never touches these (device-only staging).
+        logical, save :: done = .false.
+        type(c_devptr) :: dmap
+        integer(8) :: bytes12, bytes10
+        if (done) return
+        done = .true.
+        bytes12 = int(in,8)*jn*kn*12*8
+        bytes10 = int(in,8)*jn*kn*10*8
+        dmap = acc_malloc(bytes12)
+        call acc_map_data(svc,    dmap, bytes12)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux1, dmap, bytes10)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux2, dmap, bytes10)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux3, dmap, bytes10)
+        print '(a,z16.16,a,z16.16)', 'svc @', &
+             transfer(acc_deviceptr(svc), 1_8), &
+             ', nflux1 @', transfer(acc_deviceptr(nflux1), 1_8)
+      end subroutine cuda_data_map_init
 
       function adr(cp) result(a)
 ! c_devptr -> address-sized integer for the bind(C) boundary.

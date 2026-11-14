@@ -51,6 +51,9 @@ ifneq ($(filter flux,$(CUDA_ARMS)),)
 CPPDEFS += -DUSE_CUDA_FLUX
 endif
 ifneq ($(strip $(CPPDEFS)),)
+CPPDEFS += -DUSE_CUDA_DATA_MAP
+endif
+ifneq ($(strip $(CPPDEFS)),)
 CUDA_OBJ := mhd_cuda.o
 CUDA_LIBDIR := $(shell dirname $$(dirname $$(which nvcc)))/../cuda/13.2/targets/sbsa-linux/lib
 LDLIBS += -L$(CUDA_LIBDIR) -lcudart -lstdc++
@@ -82,6 +85,7 @@ mhd_cuda.o: mhd_cuda.cu
 boundary.o: boundary.f90 mhd.o mpiroutines.o config.o
 output.o: output.f90 boundary.o mhd.o mpiroutines.o
 main.o: main.f90 output.o boundary.o mhd.o mpiroutines.o updateconsv.o
+	${fc} ${fopt} ${foptopenacc} -Mpreprocess ${CPPDEFS} -c $<
 
 ${exed}/${exe}: ${OBJS}
 	${fc} ${fopt} ${foptopenacc} ${OBJS} -o $@ ${LDLIBS}
