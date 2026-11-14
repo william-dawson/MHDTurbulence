@@ -33,7 +33,7 @@
 // StateVevtor: primitive -> state-vector conversion.
 // Fortran loops i,j,k = 1..n-1 (includes the inner ghost ring).
 // ======================================================================
-__global__ void __launch_bounds__(256) statevevtor_cuda_kernel(
+__global__ void __launch_bounds__(256, 8) statevevtor_cuda_kernel(
     const double* __restrict__ d_, const double* __restrict__ v1_,
     const double* __restrict__ v2_, const double* __restrict__ v3_,
     const double* __restrict__ ei_, const double* __restrict__ b1_,
@@ -42,14 +42,11 @@ __global__ void __launch_bounds__(256) statevevtor_cuda_kernel(
     double* __restrict__ p_, double* __restrict__ svc_,
     double gam, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2) {
-  long long nxi = i2 - i1 + 1, nxj = j2 - j1 + 1;
-  long long total = nxi * nxj * (k2 - k1 + 1);
-  for (long long t = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-       t < total; t += (long long)gridDim.x * blockDim.x) {
-    int i = (int)(t % nxi);
-    long long tj = t / nxi;
-    int j = (int)(tj % nxj);
-    int k = (int)(tj / nxj);
+  // 3D grid: x = i (32/block), y = j (8/block), z = k.
+  int i = blockIdx.x * 32 + threadIdx.x;
+  int j = blockIdx.y * 8 + threadIdx.y;
+  int k = blockIdx.z;
+  if (i <= i2 - i1 && j <= j2 - j1) {
     long long ci = (long long)(i1 - 1 + i) +
                    (long long)in_ * (j1 - 1 + j) +
                    (long long)in_ * jn_ * (k1 - 1 + k);
@@ -80,10 +77,10 @@ extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const u
     const uintptr_t b3_, const uintptr_t bp_, const uintptr_t xcomp_, uintptr_t p_,
     uintptr_t svc_, double gam, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
-  long long total = (long long)(i2 - i1 + 1) * (j2 - j1 + 1) * (k2 - k1 + 1);
-  int blocks = (int)((total + 255) / 256);
+  dim3 block(32, 8, 1);
+  dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
   cudaStream_t s = (cudaStream_t)stream;
-  statevevtor_cuda_kernel<<<blocks, 256, 0, s>>>(
+  statevevtor_cuda_kernel<<<grid, block, 0, s>>>(
       (const double*)d_, (const double*)v1_, (const double*)v2_,
       (const double*)v3_, (const double*)ei_, (const double*)b1_,
       (const double*)b2_, (const double*)b3_, (const double*)bp_,
@@ -400,36 +397,33 @@ flux_kernel(const double* __restrict__ svc,
                             const double* __restrict__ chg_p,
                             int in_, int jn_, int kn_,
                             int i1, int i2, int j1, int j2, int k1, int k2) {
-  // Face counts: f = face-running axis, then the two transverse axes.
-  long long cnt_f, cnt_2, cnt_3;
+  // 3D-grid decomposition (no integer division): DIR 0/1 run one
+  // FLUX_BLOCK-wide block along the face axis with the transverse axes
+  // on blockIdx.y/z; DIR 2 has only ~11 faces per column, so a 32x4
+  // block covers i x k-face with j on blockIdx.y.
+  const double chg = *chg_p;
+  long long fi, fj, fk;
   long long coff;    // cell-linear step per face step
   if (DIR == 0) {
-    cnt_f = i2 - i1 + 1; cnt_2 = j2 - j1 + 1; cnt_3 = k2 - k1 + 1;
+    const long long f = (long long)blockIdx.x * FLUX_BLOCK + threadIdx.x;
+    if (f >= i2 - i1 + 1) return;
+    fi = i1 - 1 + f; fj = j1 - 1 + blockIdx.y; fk = k1 - 1 + blockIdx.z;
     coff = 1;
   } else if (DIR == 1) {
-    cnt_f = j2 - j1 + 1; cnt_2 = i2 - i1 + 1; cnt_3 = k2 - k1 + 1;
+    const long long f = (long long)blockIdx.x * FLUX_BLOCK + threadIdx.x;
+    if (f >= j2 - j1 + 1) return;
+    fj = j1 - 1 + f; fi = i1 - 1 + blockIdx.y; fk = k1 - 1 + blockIdx.z;
     coff = in_;
   } else {
-    cnt_f = k2 - k1 + 1; cnt_2 = i2 - i1 + 1; cnt_3 = j2 - j1 + 1;
+    const int ii = blockIdx.x * 32 + threadIdx.x;
+    const int kk = blockIdx.z * 4 + threadIdx.y;
+    if (ii > i2 - i1 || kk > k2 - k1) return;
+    fi = i1 - 1 + ii; fj = j1 - 1 + blockIdx.y; fk = k1 - 1 + kk;
     coff = (long long)in_ * jn_;
   }
-  const long long total = cnt_f * cnt_2 * cnt_3;
-  const double chg = *chg_p;
-  for (long long t = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-       t < total; t += (long long)gridDim.x * blockDim.x) {
-    const long long f = t % cnt_f;
-    const long long t2 = t / cnt_f;
-    const long long a = t2 % cnt_2;
-    const long long b = t2 / cnt_2;
-    // 0-based face coords (fi, fj, fk) and the face's cell-linear index.
-    long long fi, fj, fk;
-    if (DIR == 0)      { fi = i1 - 1 + f; fj = j1 - 1 + a; fk = k1 - 1 + b; }
-    else if (DIR == 1) { fj = j1 - 1 + f; fi = i1 - 1 + a; fk = k1 - 1 + b; }
-    else               { fk = k1 - 1 + f; fi = i1 - 1 + a; fj = j1 - 1 + b; }
-    const long long ci_face = fi + (long long)in_ * fj +
-                              (long long)in_ * jn_ * fk;
-    face_flux<DIR>(svc, nfx, ci_face, coff, chg);
-  }
+  const long long ci_face = fi + (long long)in_ * fj +
+                            (long long)in_ * jn_ * fk;
+  face_flux<DIR>(svc, nfx, ci_face, coff, chg);
 }
 
 template <int DIR>
@@ -437,18 +431,24 @@ static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p
                        int in_, int jn_, int kn_,
                        int i1, int i2, int j1, int j2, int k1, int k2,
                        uintptr_t stream) {
-  long long cnt_f = (DIR == 0) ? (i2 - i1 + 1) :
-                    (DIR == 1) ? (j2 - j1 + 1) : (k2 - k1 + 1);
-  long long cnt_2 = (DIR == 0) ? (j2 - j1 + 1) :
-                    (DIR == 1) ? (i2 - i1 + 1) : (i2 - i1 + 1);
-  long long cnt_3 = (DIR == 0) ? (k2 - k1 + 1) :
-                    (DIR == 1) ? (k2 - k1 + 1) : (j2 - j1 + 1);
-  long long total = cnt_f * cnt_2 * cnt_3;
-  int blocks = (int)((total + FLUX_BLOCK - 1) / FLUX_BLOCK);
   cudaStream_t s = (cudaStream_t)stream;
-  flux_kernel<DIR><<<blocks, FLUX_BLOCK, 0, s>>>(
-      (const double*)svc, (double*)nfx, (const double*)chg_p,
-      in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+  if (DIR == 2) {
+    dim3 block(32, 4, 1);
+    dim3 grid((i2 - i1 + 1 + 31) / 32, j2 - j1 + 1, (k2 - k1 + 1 + 3) / 4);
+    flux_kernel<DIR><<<grid, block, 0, s>>>(
+        (const double*)svc, (double*)nfx, (const double*)chg_p,
+        in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+  } else {
+    const long long nf = (DIR == 0) ? (i2 - i1 + 1) : (j2 - j1 + 1);
+    const long long n2 = (DIR == 0) ? (j2 - j1 + 1) : (i2 - i1 + 1);
+    const long long n3 = (k2 - k1 + 1);
+    dim3 block(FLUX_BLOCK, 1, 1);
+    dim3 grid((unsigned)((nf + FLUX_BLOCK - 1) / FLUX_BLOCK),
+              (unsigned)n2, (unsigned)n3);
+    flux_kernel<DIR><<<grid, block, 0, s>>>(
+        (const double*)svc, (double*)nfx, (const double*)chg_p,
+        in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+  }
   return (int)cudaGetLastError();
 }
 
@@ -474,7 +474,7 @@ extern "C" int flux3_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t ch
 // contiguous 10-field row, writes are warp-coalesced along i. Fortran
 // loops i=is..ie, j=js..je, k=ks..ke.
 // ======================================================================
-__global__ void __launch_bounds__(256) updateconsv_cuda_kernel(
+__global__ void __launch_bounds__(256, 8) updateconsv_cuda_kernel(
     const double* __restrict__ nflux1, const double* __restrict__ nflux2,
     const double* __restrict__ nflux3,
     double* __restrict__ d_, double* __restrict__ et_,
@@ -489,14 +489,11 @@ __global__ void __launch_bounds__(256) updateconsv_cuda_kernel(
     const double* __restrict__ x3a,
     double dt, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2) {
-  long long nxi = i2 - i1 + 1, nxj = j2 - j1 + 1;
-  long long total = nxi * nxj * (k2 - k1 + 1);
-  for (long long t = (long long)blockIdx.x * blockDim.x + threadIdx.x;
-       t < total; t += (long long)gridDim.x * blockDim.x) {
-    int i = (int)(t % nxi);
-    long long tj = t / nxi;
-    int j = (int)(tj % nxj);
-    int k = (int)(tj / nxj);
+  // 3D grid: x = i (32/block), y = j (8/block), z = k.
+  int i = blockIdx.x * 32 + threadIdx.x;
+  int j = blockIdx.y * 8 + threadIdx.y;
+  int k = blockIdx.z;
+  if (i <= i2 - i1 && j <= j2 - j1) {
     long long ci = (long long)(i1 - 1 + i) +
                    (long long)in_ * (j1 - 1 + j) +
                    (long long)in_ * jn_ * (k1 - 1 + k);
@@ -575,10 +572,10 @@ extern "C" int updateconsv_cuda(const uintptr_t nflux1, const uintptr_t nflux2,
     const uintptr_t x1a, const uintptr_t x2a, const uintptr_t x3a,
     double dt, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
-  long long total = (long long)(i2 - i1 + 1) * (j2 - j1 + 1) * (k2 - k1 + 1);
-  int blocks = (int)((total + 255) / 256);
+  dim3 block(32, 8, 1);
+  dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
   cudaStream_t s = (cudaStream_t)stream;
-  updateconsv_cuda_kernel<<<blocks, 256, 0, s>>>(
+  updateconsv_cuda_kernel<<<grid, block, 0, s>>>(
       (const double*)nflux1, (const double*)nflux2, (const double*)nflux3,
       (double*)d_, (double*)et_, (double*)mv1_, (double*)mv2_, (double*)mv3_,
       (double*)b1_, (double*)b2_, (double*)b3_, (double*)bp_,
