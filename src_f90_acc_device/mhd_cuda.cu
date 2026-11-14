@@ -421,7 +421,7 @@ __global__ void flux_kernel(const double* __restrict__ svc,
 }
 
 template <int DIR>
-static int launch_flux(const void* svc, void* nfx, const void* chg_p,
+static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p,
                        int in_, int jn_, int kn_,
                        int i1, int i2, int j1, int j2, int k1, int k2,
                        void* stream) {

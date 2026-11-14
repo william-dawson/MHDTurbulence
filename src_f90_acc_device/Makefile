@@ -49,6 +49,7 @@ CPPDEFS += -DUSE_CUDA_FLUX
 endif
 ifneq ($(strip $(CPPDEFS)),)
 OBJS += mhd_cuda.o
+LDLIBS += -L$(CUDA_HOME)/lib64 -lcudart -lstdc++
 endif
 
 .SUFFIXES: .f90 .o
@@ -65,13 +66,13 @@ mhd.o: mhd.f90 mpiroutines.o config.o
 updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc_uc} -Mpreprocess ${CPPDEFS} -c $<
 mhd_cuda.o: mhd_cuda.cu
-	nvc++ -cuda -O3 -gpu=cc100 -c $< -o $@
+	nvcc -O3 -gencode arch=compute_100,code=sm_100 -c $< -o $@
 boundary.o: boundary.f90 mhd.o mpiroutines.o config.o
 output.o: output.f90 boundary.o mhd.o mpiroutines.o
 main.o: main.f90 output.o boundary.o mhd.o mpiroutines.o updateconsv.o
 
 ${exed}/${exe}: ${OBJS}
-	${fc} ${fopt} ${foptopenacc} ${OBJS} -o $@
+	${fc} ${fopt} ${foptopenacc} ${OBJS} -o $@ ${LDLIBS}
 
 #################
 # clean up
