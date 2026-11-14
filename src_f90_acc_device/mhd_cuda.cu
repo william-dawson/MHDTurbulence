@@ -33,7 +33,7 @@
 // StateVevtor: primitive -> state-vector conversion.
 // Fortran loops i,j,k = 1..n-1 (includes the inner ghost ring).
 // ======================================================================
-__global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
+__global__ void __launch_bounds__(SV_X * SV_Y, SV_MINBLOCKS) statevevtor_cuda_kernel(
     const double* __restrict__ d_, const double* __restrict__ v1_,
     const double* __restrict__ v2_, const double* __restrict__ v3_,
     const double* __restrict__ ei_, const double* __restrict__ b1_,
@@ -50,8 +50,8 @@ __global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
   // (looped or explicitly interleaved) measured SLOWER than this
   // one-cell form -- the extra guards and slot granularity cost more
   // than the added memory-level parallelism bought on B200.
-  const int i = blockIdx.x * 32 + threadIdx.x;
-  const int j = blockIdx.y * 8 + threadIdx.y;
+  const int i = blockIdx.x * SV_X + threadIdx.x;
+  const int j = blockIdx.y * SV_Y + threadIdx.y;
   const int k = blockIdx.z;
   if (i <= i2 - i1 && j <= j2 - j1) {
     long long ci = (long long)(i1 - 1 + i) +
@@ -88,8 +88,8 @@ extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const u
     const uintptr_t b3_, const uintptr_t bp_, const uintptr_t xcomp_, uintptr_t p_,
     uintptr_t svc_, double gamc, double gamc1, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
-  dim3 block(32, 8, 1);
-  dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
+  dim3 block(SV_X, SV_Y, 1);
+  dim3 grid((i2 - i1 + 1 + SV_X - 1) / SV_X, (j2 - j1 + 1 + SV_Y - 1) / SV_Y, k2 - k1 + 1);
   cudaStream_t s = (cudaStream_t)stream;
   statevevtor_cuda_kernel<<<grid, block, 0, s>>>(
       (const double*)d_, (const double*)v1_, (const double*)v2_,
@@ -405,6 +405,24 @@ DEVINL void face_flux(const double* __restrict__ svc,
 // faces along the face axis (the OpenACC worker-loop shape). Strips
 // let the next face's cell loads overlap the current face's HLLD and
 // serve the 3-of-4 shared stencil cells from L1.
+#ifndef UC_X
+#define UC_X 32
+#endif
+#ifndef UC_Y
+#define UC_Y 8
+#endif
+#ifndef UC_MINBLOCKS
+#define UC_MINBLOCKS 4
+#endif
+#ifndef SV_X
+#define SV_X 32
+#endif
+#ifndef SV_Y
+#define SV_Y 8
+#endif
+#ifndef SV_MINBLOCKS
+#define SV_MINBLOCKS 5
+#endif
 #ifndef FACES_PER_THREAD
 #define FACES_PER_THREAD 1
 #endif
@@ -539,7 +557,7 @@ extern "C" int flux3_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t ch
 // contiguous 10-field row, writes are warp-coalesced along i. Fortran
 // loops i=is..ie, j=js..je, k=ks..ke.
 // ======================================================================
-__global__ void __launch_bounds__(256, 4) updateconsv_cuda_kernel(
+__global__ void __launch_bounds__(UC_X * UC_Y, UC_MINBLOCKS) updateconsv_cuda_kernel(
     const double* __restrict__ nflux1, const double* __restrict__ nflux2,
     const double* __restrict__ nflux3,
     double* __restrict__ d_, double* __restrict__ et_,
@@ -554,9 +572,9 @@ __global__ void __launch_bounds__(256, 4) updateconsv_cuda_kernel(
     const double* __restrict__ x3a,
     double dt, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2) {
-  // 3D grid: x = i (32/block), y = j (8/block), z = k.
-  int i = blockIdx.x * 32 + threadIdx.x;
-  int j = blockIdx.y * 8 + threadIdx.y;
+  // 3D grid: x = i (UC_X/block), y = j (UC_Y/block), z = k.
+  int i = blockIdx.x * UC_X + threadIdx.x;
+  int j = blockIdx.y * UC_Y + threadIdx.y;
   int k = blockIdx.z;
   if (i <= i2 - i1 && j <= j2 - j1) {
     long long ci = (long long)(i1 - 1 + i) +
@@ -637,8 +655,8 @@ extern "C" int updateconsv_cuda(const uintptr_t nflux1, const uintptr_t nflux2,
     const uintptr_t x1a, const uintptr_t x2a, const uintptr_t x3a,
     double dt, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
-  dim3 block(32, 8, 1);
-  dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
+  dim3 block(UC_X, UC_Y, 1);
+  dim3 grid((i2 - i1 + 1 + UC_X - 1) / UC_X, (j2 - j1 + 1 + UC_Y - 1) / UC_Y, k2 - k1 + 1);
   cudaStream_t s = (cudaStream_t)stream;
   updateconsv_cuda_kernel<<<grid, block, 0, s>>>(
       (const double*)nflux1, (const double*)nflux2, (const double*)nflux3,

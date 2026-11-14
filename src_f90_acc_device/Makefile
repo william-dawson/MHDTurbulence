@@ -35,6 +35,12 @@ CUDA_KERNELS ?=
 FLUX_BLOCK ?= 128
 FLUX_MINBLOCKS ?= 4
 FACES_PER_THREAD ?= 1
+UC_X ?= 32
+UC_Y ?= 8
+UC_MINBLOCKS ?= 4
+SV_X ?= 32
+SV_Y ?= 8
+SV_MINBLOCKS ?= 5
 ifeq ($(CUDA_KERNELS),1)
 CUDA_ARMS := sv uc flux
 else
@@ -81,7 +87,9 @@ gravforce.o: gravforce.f90 mhd.o mpiroutines.o config.o
 mhd_cuda.o: mhd_cuda.cu
 	nvcc -O3 -lineinfo -gencode arch=compute_100,code=sm_100 \
 		-DFLUX_BLOCK=$(FLUX_BLOCK) -DFLUX_MINBLOCKS=$(FLUX_MINBLOCKS) \
-		-DFACES_PER_THREAD=$(FACES_PER_THREAD) -c $< -o $@
+		-DFACES_PER_THREAD=$(FACES_PER_THREAD) \
+		-DUC_X=$(UC_X) -DUC_Y=$(UC_Y) -DUC_MINBLOCKS=$(UC_MINBLOCKS) \
+		-DSV_X=$(SV_X) -DSV_Y=$(SV_Y) -DSV_MINBLOCKS=$(SV_MINBLOCKS) -c $< -o $@
 boundary.o: boundary.f90 mhd.o mpiroutines.o config.o
 output.o: output.f90 boundary.o mhd.o mpiroutines.o
 main.o: main.f90 output.o boundary.o mhd.o mpiroutines.o updateconsv.o
