@@ -418,15 +418,19 @@ flux_kernel(const double* __restrict__ svc,
     fi = i1 - 1 + f; fj = j1 - 1 + blockIdx.y; fk = k1 - 1 + blockIdx.z;
     coff = 1;
   } else if (DIR == 1) {
-    const long long f = (long long)blockIdx.x * FLUX_BLOCK + threadIdx.x;
-    if (f >= j2 - j1 + 1) return;
-    fj = j1 - 1 + f; fi = i1 - 1 + blockIdx.y; fk = k1 - 1 + blockIdx.z;
+    // Warp along i (contiguous cells per instruction); 4 j-faces per
+    // block on threadIdx.y. Walking j in a warp puts every lane's cells
+    // 58 KB apart (in*jn stride) and costs 32 L1 lines per load.
+    const int ii = blockIdx.x * 32 + threadIdx.x;
+    const int jj = blockIdx.y * 4 + threadIdx.y;
+    if (ii > i2 - i1 || jj > j2 - j1) return;
+    fi = i1 - 1 + ii; fj = j1 - 1 + jj; fk = k1 - 1 + blockIdx.z;
     coff = in_;
   } else {
     const int ii = blockIdx.x * 32 + threadIdx.x;
-    const int kk = blockIdx.z * 4 + threadIdx.y;
+    const int kk = blockIdx.y * 4 + threadIdx.y;
     if (ii > i2 - i1 || kk > k2 - k1) return;
-    fi = i1 - 1 + ii; fj = j1 - 1 + blockIdx.y; fk = k1 - 1 + kk;
+    fi = i1 - 1 + ii; fj = j1 - 1 + blockIdx.z; fk = k1 - 1 + kk;
     coff = (long long)in_ * jn_;
   }
   const long long ci_face = fi + (long long)in_ * fj +
@@ -474,8 +478,15 @@ static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p
   cudaStream_t s = (cudaStream_t)stream;
   if (DIR == 2) {
     dim3 block(32, 4, 1);
-    dim3 grid((i2 - i1 + 1 + 31) / 32, j2 - j1 + 1,
-              (k2 - k1 + 1 + 4 * FACES_PER_THREAD - 1) / (4 * FACES_PER_THREAD));
+    dim3 grid((i2 - i1 + 1 + 31) / 32,
+              (k2 - k1 + 1 + 3) / 4, j2 - j1 + 1);
+    flux_kernel<DIR><<<grid, block, 0, s>>>(
+        (const double*)svc, (double*)nfx, (const double*)chg_p,
+        in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+  } else if (DIR == 1) {
+    dim3 block(32, 4, 1);
+    dim3 grid((i2 - i1 + 1 + 31) / 32,
+              (j2 - j1 + 1 + 3) / 4, k2 - k1 + 1);
     flux_kernel<DIR><<<grid, block, 0, s>>>(
         (const double*)svc, (double*)nfx, (const double*)chg_p,
         in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
