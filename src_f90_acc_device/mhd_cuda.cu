@@ -59,13 +59,18 @@ __global__ void __launch_bounds__(256) statevevtor_cuda_kernel(
     double b1v = b1_[ci], b2v = b2_[ci], b3v = b3_[ci], bpv = bp_[ci];
     double xv  = xcomp_[ci];
     double g1  = gam - 1.0;
-    double2* q = (double2*)(svc_ + ci * 12);
-    q[0] = make_double2(dv,   v1v);
-    q[1] = make_double2(v2v,  v3v);
-    q[2] = make_double2(eiv / dv, eiv * g1);
-    q[3] = make_double2(sqrt(gam * g1 * eiv / dv), b1v);
-    q[4] = make_double2(b2v,  b3v);
-    q[5] = make_double2(bpv,  xv);
+    // Scalar accesses throughout: nvfortran packs the acc declare
+    // create arrays with 8-byte-granular offsets (every pointer here is
+    // 8 mod 16), so 16-byte vector accesses would fault. The packer
+    // offsets are not controllable from source; revisit with
+    // acc_map_data if the double2 paths are ever worth restoring.
+    double* q = svc_ + ci * 12;
+    q[0]  = dv;   q[1]  = v1v;  q[2]  = v2v;  q[3]  = v3v;
+    q[4]  = eiv / dv;
+    q[5]  = eiv * g1;
+    q[6]  = sqrt(gam * g1 * eiv / dv);
+    q[7]  = b1v;  q[8]  = b2v;  q[9]  = b3v;
+    q[10] = bpv;  q[11] = xv;
     p_[ci] = eiv * g1;
   }
 }
@@ -276,17 +281,16 @@ DEVINL void face_flux(const double* __restrict__ svc,
   // Load the 4 stencil cells (contiguous 12-field rows).
   double A0[12], A1[12], A2[12], A3[12];
   {
-    const double2* q0 = (const double2*)(svc + (ci_face - 2 * coff) * 12);
-    const double2* q1 = (const double2*)(svc + (ci_face - coff) * 12);
-    const double2* q2 = (const double2*)(svc + ci_face * 12);
-    const double2* q3 = (const double2*)(svc + (ci_face + coff) * 12);
+    const double* q0 = svc + (ci_face - 2 * coff) * 12;
+    const double* q1 = svc + (ci_face - coff) * 12;
+    const double* q2 = svc + ci_face * 12;
+    const double* q3 = svc + (ci_face + coff) * 12;
     #pragma unroll
-    for (int k = 0; k < 6; ++k) {
-      double2 w;
-      w = q0[k]; A0[2*k] = w.x; A0[2*k+1] = w.y;
-      w = q1[k]; A1[2*k] = w.x; A1[2*k+1] = w.y;
-      w = q2[k]; A2[2*k] = w.x; A2[2*k+1] = w.y;
-      w = q3[k]; A3[2*k] = w.x; A3[2*k+1] = w.y;
+    for (int k = 0; k < 12; ++k) {
+      A0[k] = q0[k];
+      A1[k] = q1[k];
+      A2[k] = q2[k];
+      A3[k] = q3[k];
     }
   }
 
@@ -377,9 +381,9 @@ DEVINL void face_flux(const double* __restrict__ svc,
     out[4] = n_et;  out[5] = n_bt1; out[6] = n_bt2; out[7] = glm_bn;
     out[8] = glm_bp; out[9] = n_sc;
   }
-  double2* q = (double2*)(nfx + ci_face * 10);
+  double* q = nfx + ci_face * 10;
   #pragma unroll
-  for (int k = 0; k < 5; ++k) q[k] = make_double2(out[2*k], out[2*k+1]);
+  for (int k = 0; k < 10; ++k) q[k] = out[k];
 }
 
 template <int DIR>
@@ -458,9 +462,9 @@ extern "C" int flux3_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t ch
 
 // ======================================================================
 // UpdateConsv: u += dt * (flux divergence in 3 directions [+ gravity
-// source on the momenta]). Thread = one cell; the face windows are
-// contiguous 10-field rows read as double2, writes are warp-coalesced
-// along i. Fortran loops i=is..ie, j=js..je, k=ks..ke.
+// source on the momenta]). Thread = one cell; each face window is a
+// contiguous 10-field row, writes are warp-coalesced along i. Fortran
+// loops i=is..ie, j=js..je, k=ks..ke.
 // ======================================================================
 __global__ void __launch_bounds__(256) updateconsv_cuda_kernel(
     const double* __restrict__ nflux1, const double* __restrict__ nflux2,
@@ -500,37 +504,37 @@ __global__ void __launch_bounds__(256) updateconsv_cuda_kernel(
     #pragma unroll
     for (int q = 0; q < 10; ++q) acc[q] = 0.0;
     {
-      const double2* wa = (const double2*)(nflux1 + ci * 10);
-      const double2* wb = (const double2*)(nflux1 + (ci + 1) * 10);
+      const double* wa = nflux1 + ci * 10;
+      const double* wb = nflux1 + (ci + 1) * 10;
       double a[10], b[10];
       #pragma unroll
-      for (int q = 0; q < 5; ++q) {
-        double2 w; w = wa[q]; a[2*q] = w.x; a[2*q+1] = w.y;
-        w = wb[q]; b[2*q] = w.x; b[2*q+1] = w.y;
+      for (int q = 0; q < 10; ++q) {
+        a[q] = wa[q];
+        b[q] = wb[q];
       }
       #pragma unroll
       for (int q = 0; q < 10; ++q) acc[q] += (a[q] - b[q]) * invx;
     }
     {
-      const double2* wa = (const double2*)(nflux2 + ci * 10);
-      const double2* wb = (const double2*)(nflux2 + (ci + (long long)in_) * 10);
+      const double* wa = nflux2 + ci * 10;
+      const double* wb = nflux2 + (ci + (long long)in_) * 10;
       double a[10], b[10];
       #pragma unroll
-      for (int q = 0; q < 5; ++q) {
-        double2 w; w = wa[q]; a[2*q] = w.x; a[2*q+1] = w.y;
-        w = wb[q]; b[2*q] = w.x; b[2*q+1] = w.y;
+      for (int q = 0; q < 10; ++q) {
+        a[q] = wa[q];
+        b[q] = wb[q];
       }
       #pragma unroll
       for (int q = 0; q < 10; ++q) acc[q] += (a[q] - b[q]) * invy;
     }
     {
-      const double2* wa = (const double2*)(nflux3 + ci * 10);
-      const double2* wb = (const double2*)(nflux3 + (ci + (long long)in_ * jn_) * 10);
+      const double* wa = nflux3 + ci * 10;
+      const double* wb = nflux3 + (ci + (long long)in_ * jn_) * 10;
       double a[10], b[10];
       #pragma unroll
-      for (int q = 0; q < 5; ++q) {
-        double2 w; w = wa[q]; a[2*q] = w.x; a[2*q+1] = w.y;
-        w = wb[q]; b[2*q] = w.x; b[2*q+1] = w.y;
+      for (int q = 0; q < 10; ++q) {
+        a[q] = wa[q];
+        b[q] = wb[q];
       }
       #pragma unroll
       for (int q = 0; q < 10; ++q) acc[q] += (a[q] - b[q]) * invz;
