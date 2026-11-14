@@ -424,7 +424,7 @@ template <int DIR>
 static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p,
                        int in_, int jn_, int kn_,
                        int i1, int i2, int j1, int j2, int k1, int k2,
-                       void* stream) {
+                       uintptr_t stream) {
   long long cnt_f = (DIR == 0) ? (i2 - i1 + 1) :
                     (DIR == 1) ? (j2 - j1 + 1) : (k2 - k1 + 1);
   long long cnt_2 = (DIR == 0) ? (j2 - j1 + 1) :
