@@ -194,6 +194,21 @@ module basicmod
 
       subroutine cuda_statevevtor()
         integer(8) :: sptr
+        logical, save :: first = .true.
+        if (first) then
+           first = .false.
+! One-time alignment dump: the double2 vector paths in mhd_cuda.cu need
+! 16-byte-aligned array bases; nvfortran packs acc declare create arrays
+! and the packing offsets are not guaranteed.
+           print '(a,z16.16)', 'svc   devptr %16 = ', &
+                mod(adr(acc_deviceptr(svc)), 16_8)
+           print '(a,z16.16)', 'nflux1 devptr %16 = ', &
+                mod(adr(acc_deviceptr(nflux1)), 16_8)
+           print '(a,z16.16)', 'd     devptr %16 = ', &
+                mod(adr(acc_deviceptr(d)), 16_8)
+           print '(a,z16.16)', 'x1a   devptr %16 = ', &
+                mod(adr(acc_deviceptr(x1a)), 16_8)
+        end if
         if (nhyd /= 12 .or. ncomp /= 1) then
            error stop 'cuda_statevevtor: requires ncomp=1 (nhyd=12)'
         end if
