@@ -108,7 +108,11 @@ module basicmod
 ! MPI exchanges stay ordered. Lives in mhd.f90 (not its own file) so
 ! the module's use-associations resolve without a circular .mod
 ! dependency; updateconsv.f90 compiles after mhd.o and may use it.
-      use iso_c_binding, only: c_devptr, c_int, c_double
+! The bind(C) interfaces use explicit integer(4)/integer(8)/real(8)
+! because nvfortran 26.5 refuses to IMPORT use-associated names
+! (c_devptr, c_size_t) into interface bodies; the kinds match
+! c_int/c_size_t/c_double on this platform.
+      use iso_c_binding, only: c_devptr
       use openacc, only: acc_deviceptr, acc_get_cuda_stream, acc_async_sync
       use basicmod, only: in, jn, kn, is, js, ks, ie, je, ke, dt &
            & , x1a, x2a, x3a &
@@ -120,83 +124,76 @@ module basicmod
       implicit none
 
       interface
-      function statevevtor_cuda(d_p, v1_p, v2_p, v3_p, ei_p, b1_p, b2_p &
-           & , b3_p, bp_p, xc_p, p_p, svc_p, gam, in_, jn_, kn_ &
-           & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_int, c_double, c_size_t
+      function statevevtor_cuda(d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad &
+           & , b2_ad, b3_ad, bp_ad, xc_ad, p_ad, svc_ad, gam, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
-        integer(c_size_t), value :: d_p, v1_p, v2_p, v3_p, ei_p, b1_p, b2_p
-        integer(c_size_t), value :: b3_p, bp_p, xc_p, p_p, svc_p, stream_p
-        real(c_double), value :: gam
-        integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
-        integer(c_int) :: rc
+        integer(8), value :: d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad, b2_ad
+        integer(8), value :: b3_ad, bp_ad, xc_ad, p_ad, svc_ad, stream_ad
+        real(8), value :: gam
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
       end function statevevtor_cuda
 
-      function flux1_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
-           & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_int, c_size_t
+      function flux1_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
-        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
-        integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
-        integer(c_int) :: rc
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
       end function flux1_cuda
 
-      function flux2_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
-           & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_int, c_size_t
+      function flux2_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
-        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
-        integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
-        integer(c_int) :: rc
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
       end function flux2_cuda
 
-      function flux3_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
-           & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_int, c_size_t
+      function flux3_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
-        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
-        integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
-        integer(c_int) :: rc
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
       end function flux3_cuda
 
-      function updateconsv_cuda(nf1_p, nf2_p, nf3_p, d_p, et_p, mv1_p &
-           & , mv2_p, mv3_p, b1_p, b2_p, b3_p, bp_p, dxc_p, g1_p, g2_p &
-           & , g3_p, x1_p, x2_p, x3_p, dtv, in_, jn_, kn_ &
-           & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_int, c_double, c_size_t
+      function updateconsv_cuda(nf1_ad, nf2_ad, nf3_ad, d_ad, et_ad, mv1_ad &
+           & , mv2_ad, mv3_ad, b1_ad, b2_ad, b3_ad, bp_ad, dxc_ad, g1_ad &
+           & , g2_ad, g3_ad, x1_ad, x2_ad, x3_ad, dtv, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
-        integer(c_size_t), value :: nf1_p, nf2_p, nf3_p, d_p, et_p, mv1_p
-        integer(c_size_t), value :: mv2_p, mv3_p, b1_p, b2_p, b3_p, bp_p
-        integer(c_size_t), value :: dxc_p, g1_p, g2_p, g3_p, x1_p, x2_p, x3_p
-        integer(c_size_t), value :: stream_p
-        real(c_double), value :: dtv
-        integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
-        integer(c_int) :: rc
+        integer(8), value :: nf1_ad, nf2_ad, nf3_ad, d_ad, et_ad, mv1_ad
+        integer(8), value :: mv2_ad, mv3_ad, b1_ad, b2_ad, b3_ad, bp_ad
+        integer(8), value :: dxc_ad, g1_ad, g2_ad, g3_ad, x1_ad, x2_ad, x3_ad
+        integer(8), value :: stream_ad
+        real(8), value :: dtv
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
       end function updateconsv_cuda
       end interface
 
       contains
 
       function adr(cp) result(a)
-! c_devptr -> address-sized integer (nvfortran will not IMPORT c_devptr
-! into a bind(C) interface body, so pointers cross as size_t).
-        use iso_c_binding, only: c_devptr, c_size_t
+! c_devptr -> address-sized integer for the bind(C) boundary.
         type(c_devptr), intent(in) :: cp
-        integer(c_size_t) :: a
-        a = transfer(cp, 1_c_size_t)
+        integer(8) :: a
+        a = transfer(cp, 1_8)
       end function adr
 
       subroutine cuda_check(rc, where)
-        integer(c_int), intent(in) :: rc
+        integer(4), intent(in) :: rc
         character(len=*), intent(in) :: where
-        if (rc /= 0_c_int) then
+        if (rc /= 0) then
            write(*,'(a,i0,2a)') 'CUDA launch failed (', rc, ') in ', where
            error stop 'cuda_kernels_f90'
         end if
       end subroutine cuda_check
 
       subroutine cuda_statevevtor()
-        integer(c_size_t) :: sptr
+        integer(8) :: sptr
         if (nhyd /= 12 .or. ncomp /= 1) then
            error stop 'cuda_statevevtor: requires ncomp=1 (nhyd=12)'
         end if
@@ -206,55 +203,55 @@ module basicmod
            , adr(acc_deviceptr(v3)), adr(acc_deviceptr(ei)), adr(acc_deviceptr(b1)) &
            , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
            , adr(acc_deviceptr(Xcomp)), adr(acc_deviceptr(p)), adr(acc_deviceptr(svc)) &
-           , real(gam, c_double) &
-           , int(in, c_int), int(jn, c_int), int(kn, c_int) &
-           , 1_c_int, int(in-1, c_int) &
-           , 1_c_int, int(jn-1, c_int) &
-           , 1_c_int, int(kn-1, c_int) &
+           , gam &
+           , in, jn, kn &
+           , 1, in-1 &
+           , 1, jn-1 &
+           , 1, kn-1 &
            , sptr), 'statevevtor')
       end subroutine cuda_statevevtor
 
       subroutine cuda_flux1()
-        integer(c_size_t) :: sptr
+        integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux1: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux1_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(chg)) &
-           , int(in, c_int), int(jn, c_int), int(kn, c_int) &
-           , int(is, c_int), int(ie+1, c_int) &
-           , int(js, c_int), int(je, c_int) &
-           , int(ks, c_int), int(ke, c_int) &
+           , in, jn, kn &
+           , is, ie+1 &
+           , js, je &
+           , ks, ke &
            , sptr), 'flux1')
       end subroutine cuda_flux1
 
       subroutine cuda_flux2()
-        integer(c_size_t) :: sptr
+        integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux2: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux2_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux2)), adr(acc_deviceptr(chg)) &
-           , int(in, c_int), int(jn, c_int), int(kn, c_int) &
-           , int(is, c_int), int(ie, c_int) &
-           , int(js, c_int), int(je+1, c_int) &
-           , int(ks, c_int), int(ke, c_int) &
+           , in, jn, kn &
+           , is, ie &
+           , js, je+1 &
+           , ks, ke &
            , sptr), 'flux2')
       end subroutine cuda_flux2
 
       subroutine cuda_flux3()
-        integer(c_size_t) :: sptr
+        integer(8) :: sptr
         if (mflx /= 10) error stop 'cuda_flux3: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux3_cuda( &
              adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux3)), adr(acc_deviceptr(chg)) &
-           , int(in, c_int), int(jn, c_int), int(kn, c_int) &
-           , int(is, c_int), int(ie, c_int) &
-           , int(js, c_int), int(je, c_int) &
-           , int(ks, c_int), int(ke+1, c_int) &
+           , in, jn, kn &
+           , is, ie &
+           , js, je &
+           , ks, ke+1 &
            , sptr), 'flux3')
       end subroutine cuda_flux3
 
       subroutine cuda_updateconsv()
-        integer(c_size_t) :: sptr
+        integer(8) :: sptr
         if (ncomp /= 1) error stop 'cuda_updateconsv: requires ncomp=1'
         sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(updateconsv_cuda( &
@@ -267,11 +264,11 @@ module basicmod
            , adr(acc_deviceptr(grvsrc1)), adr(acc_deviceptr(grvsrc2)) &
            , adr(acc_deviceptr(grvsrc3)) &
            , adr(acc_deviceptr(x1a)), adr(acc_deviceptr(x2a)), adr(acc_deviceptr(x3a)) &
-           , real(dt, c_double) &
-           , int(in, c_int), int(jn, c_int), int(kn, c_int) &
-           , int(is, c_int), int(ie, c_int) &
-           , int(js, c_int), int(je, c_int) &
-           , int(ks, c_int), int(ke, c_int) &
+           , dt &
+           , in, jn, kn &
+           , is, ie &
+           , js, je &
+           , ks, ke &
            , sptr), 'updateconsv')
       end subroutine cuda_updateconsv
 
