@@ -25,6 +25,7 @@
 // TOTAL energies (leftst(muet)), as there.
 
 #include <cmath>
+#include <cstdint>
 
 #define DEVINL __device__ __forceinline__
 
@@ -69,11 +70,11 @@ __global__ void __launch_bounds__(256) statevevtor_cuda_kernel(
   }
 }
 
-extern "C" int statevevtor_cuda(const void* d_, const void* v1_, const void* v2_,
-    const void* v3_, const void* ei_, const void* b1_, const void* b2_,
-    const void* b3_, const void* bp_, const void* xcomp_, void* p_,
-    void* svc_, double gam, int in_, int jn_, int kn_,
-    int i1, int i2, int j1, int j2, int k1, int k2, void* stream) {
+extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const uintptr_t v2_,
+    const uintptr_t v3_, const uintptr_t ei_, const uintptr_t b1_, const uintptr_t b2_,
+    const uintptr_t b3_, const uintptr_t bp_, const uintptr_t xcomp_, uintptr_t p_,
+    uintptr_t svc_, double gam, int in_, int jn_, int kn_,
+    int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
   long long total = (long long)(i2 - i1 + 1) * (j2 - j1 + 1) * (k2 - k1 + 1);
   int blocks = (int)((total + 255) / 256);
   cudaStream_t s = (cudaStream_t)stream;
@@ -439,19 +440,19 @@ static int launch_flux(const void* svc, void* nfx, const void* chg_p,
   return (int)cudaGetLastError();
 }
 
-extern "C" int flux1_cuda(const void* svc, void* nfx, const void* chg_p,
+extern "C" int flux1_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p,
     int in_, int jn_, int kn_, int i1, int i2, int j1, int j2, int k1, int k2,
-    void* stream) {
+    uintptr_t stream) {
   return launch_flux<0>(svc, nfx, chg_p, in_, jn_, kn_, i1, i2, j1, j2, k1, k2, stream);
 }
-extern "C" int flux2_cuda(const void* svc, void* nfx, const void* chg_p,
+extern "C" int flux2_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p,
     int in_, int jn_, int kn_, int i1, int i2, int j1, int j2, int k1, int k2,
-    void* stream) {
+    uintptr_t stream) {
   return launch_flux<1>(svc, nfx, chg_p, in_, jn_, kn_, i1, i2, j1, j2, k1, k2, stream);
 }
-extern "C" int flux3_cuda(const void* svc, void* nfx, const void* chg_p,
+extern "C" int flux3_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p,
     int in_, int jn_, int kn_, int i1, int i2, int j1, int j2, int k1, int k2,
-    void* stream) {
+    uintptr_t stream) {
   return launch_flux<2>(svc, nfx, chg_p, in_, jn_, kn_, i1, i2, j1, j2, k1, k2, stream);
 }
 
@@ -555,13 +556,13 @@ __global__ void __launch_bounds__(256) updateconsv_cuda_kernel(
   }
 }
 
-extern "C" int updateconsv_cuda(const void* nflux1, const void* nflux2,
-    const void* nflux3, void* d_, void* et_, void* mv1_, void* mv2_,
-    void* mv3_, void* b1_, void* b2_, void* b3_, void* bp_, void* dxcomp_,
-    const void* grv1, const void* grv2, const void* grv3,
-    const void* x1a, const void* x2a, const void* x3a,
+extern "C" int updateconsv_cuda(const uintptr_t nflux1, const uintptr_t nflux2,
+    const uintptr_t nflux3, uintptr_t d_, uintptr_t et_, uintptr_t mv1_, uintptr_t mv2_,
+    uintptr_t mv3_, uintptr_t b1_, uintptr_t b2_, uintptr_t b3_, uintptr_t bp_, uintptr_t dxcomp_,
+    const uintptr_t grv1, const uintptr_t grv2, const uintptr_t grv3,
+    const uintptr_t x1a, const uintptr_t x2a, const uintptr_t x3a,
     double dt, int in_, int jn_, int kn_,
-    int i1, int i2, int j1, int j2, int k1, int k2, void* stream) {
+    int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
   long long total = (long long)(i2 - i1 + 1) * (j2 - j1 + 1) * (k2 - k1 + 1);
   int blocks = (int)((total + 255) / 256);
   cudaStream_t s = (cudaStream_t)stream;

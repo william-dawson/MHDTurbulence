@@ -123,10 +123,10 @@ module basicmod
       function statevevtor_cuda(d_p, v1_p, v2_p, v3_p, ei_p, b1_p, b2_p &
            & , b3_p, bp_p, xc_p, p_p, svc_p, gam, in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_devptr, c_int, c_double
+        import :: c_int, c_double, c_size_t
         implicit none
-        type(c_devptr), value :: d_p, v1_p, v2_p, v3_p, ei_p, b1_p, b2_p
-        type(c_devptr), value :: b3_p, bp_p, xc_p, p_p, svc_p, stream_p
+        integer(c_size_t), value :: d_p, v1_p, v2_p, v3_p, ei_p, b1_p, b2_p
+        integer(c_size_t), value :: b3_p, bp_p, xc_p, p_p, svc_p, stream_p
         real(c_double), value :: gam
         integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(c_int) :: rc
@@ -134,27 +134,27 @@ module basicmod
 
       function flux1_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_devptr, c_int
+        import :: c_int, c_size_t
         implicit none
-        type(c_devptr), value :: svc_p, nfx_p, chg_p, stream_p
+        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
         integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(c_int) :: rc
       end function flux1_cuda
 
       function flux2_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_devptr, c_int
+        import :: c_int, c_size_t
         implicit none
-        type(c_devptr), value :: svc_p, nfx_p, chg_p, stream_p
+        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
         integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(c_int) :: rc
       end function flux2_cuda
 
       function flux3_cuda(svc_p, nfx_p, chg_p, in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_devptr, c_int
+        import :: c_int, c_size_t
         implicit none
-        type(c_devptr), value :: svc_p, nfx_p, chg_p, stream_p
+        integer(c_size_t), value :: svc_p, nfx_p, chg_p, stream_p
         integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(c_int) :: rc
       end function flux3_cuda
@@ -163,12 +163,12 @@ module basicmod
            & , mv2_p, mv3_p, b1_p, b2_p, b3_p, bp_p, dxc_p, g1_p, g2_p &
            & , g3_p, x1_p, x2_p, x3_p, dtv, in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_p) bind(C) result(rc)
-        import :: c_devptr, c_int, c_double
+        import :: c_int, c_double, c_size_t
         implicit none
-        type(c_devptr), value :: nf1_p, nf2_p, nf3_p, d_p, et_p, mv1_p
-        type(c_devptr), value :: mv2_p, mv3_p, b1_p, b2_p, b3_p, bp_p
-        type(c_devptr), value :: dxc_p, g1_p, g2_p, g3_p, x1_p, x2_p, x3_p
-        type(c_devptr), value :: stream_p
+        integer(c_size_t), value :: nf1_p, nf2_p, nf3_p, d_p, et_p, mv1_p
+        integer(c_size_t), value :: mv2_p, mv3_p, b1_p, b2_p, b3_p, bp_p
+        integer(c_size_t), value :: dxc_p, g1_p, g2_p, g3_p, x1_p, x2_p, x3_p
+        integer(c_size_t), value :: stream_p
         real(c_double), value :: dtv
         integer(c_int), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(c_int) :: rc
@@ -176,6 +176,15 @@ module basicmod
       end interface
 
       contains
+
+      function adr(cp) result(a)
+! c_devptr -> address-sized integer (nvfortran will not IMPORT c_devptr
+! into a bind(C) interface body, so pointers cross as size_t).
+        use iso_c_binding, only: c_devptr, c_size_t
+        type(c_devptr), intent(in) :: cp
+        integer(c_size_t) :: a
+        a = transfer(cp, 1_c_size_t)
+      end function adr
 
       subroutine cuda_check(rc, where)
         integer(c_int), intent(in) :: rc
@@ -187,16 +196,16 @@ module basicmod
       end subroutine cuda_check
 
       subroutine cuda_statevevtor()
-        type(c_devptr) :: sptr
+        integer(c_size_t) :: sptr
         if (nhyd /= 12 .or. ncomp /= 1) then
            error stop 'cuda_statevevtor: requires ncomp=1 (nhyd=12)'
         end if
-        sptr = acc_get_cuda_stream(acc_async_sync)
+        sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(statevevtor_cuda( &
-             acc_deviceptr(d), acc_deviceptr(v1), acc_deviceptr(v2) &
-           , acc_deviceptr(v3), acc_deviceptr(ei), acc_deviceptr(b1) &
-           , acc_deviceptr(b2), acc_deviceptr(b3), acc_deviceptr(bp) &
-           , acc_deviceptr(Xcomp), acc_deviceptr(p), acc_deviceptr(svc) &
+             adr(acc_deviceptr(d), adr(acc_deviceptr(v1), adr(acc_deviceptr(v2) &
+           , adr(acc_deviceptr(v3), adr(acc_deviceptr(ei), adr(acc_deviceptr(b1) &
+           , adr(acc_deviceptr(b2), adr(acc_deviceptr(b3), adr(acc_deviceptr(bp) &
+           , adr(acc_deviceptr(Xcomp), adr(acc_deviceptr(p), adr(acc_deviceptr(svc) &
            , real(gam, c_double) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , 1_c_int, int(in-1, c_int) &
@@ -206,11 +215,11 @@ module basicmod
       end subroutine cuda_statevevtor
 
       subroutine cuda_flux1()
-        type(c_devptr) :: sptr
+        integer(c_size_t) :: sptr
         if (mflx /= 10) error stop 'cuda_flux1: requires ncomp=1'
-        sptr = acc_get_cuda_stream(acc_async_sync)
+        sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux1_cuda( &
-             acc_deviceptr(svc), acc_deviceptr(nflux1), acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux1), adr(acc_deviceptr(chg) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie+1, c_int) &
            , int(js, c_int), int(je, c_int) &
@@ -219,11 +228,11 @@ module basicmod
       end subroutine cuda_flux1
 
       subroutine cuda_flux2()
-        type(c_devptr) :: sptr
+        integer(c_size_t) :: sptr
         if (mflx /= 10) error stop 'cuda_flux2: requires ncomp=1'
-        sptr = acc_get_cuda_stream(acc_async_sync)
+        sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux2_cuda( &
-             acc_deviceptr(svc), acc_deviceptr(nflux2), acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux2), adr(acc_deviceptr(chg) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
            , int(js, c_int), int(je+1, c_int) &
@@ -232,11 +241,11 @@ module basicmod
       end subroutine cuda_flux2
 
       subroutine cuda_flux3()
-        type(c_devptr) :: sptr
+        integer(c_size_t) :: sptr
         if (mflx /= 10) error stop 'cuda_flux3: requires ncomp=1'
-        sptr = acc_get_cuda_stream(acc_async_sync)
+        sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(flux3_cuda( &
-             acc_deviceptr(svc), acc_deviceptr(nflux3), acc_deviceptr(chg) &
+             adr(acc_deviceptr(svc), adr(acc_deviceptr(nflux3), adr(acc_deviceptr(chg) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
            , int(js, c_int), int(je, c_int) &
@@ -245,19 +254,19 @@ module basicmod
       end subroutine cuda_flux3
 
       subroutine cuda_updateconsv()
-        type(c_devptr) :: sptr
+        integer(c_size_t) :: sptr
         if (ncomp /= 1) error stop 'cuda_updateconsv: requires ncomp=1'
-        sptr = acc_get_cuda_stream(acc_async_sync)
+        sptr = adr(acc_get_cuda_stream(acc_async_sync))
         call cuda_check(updateconsv_cuda( &
-             acc_deviceptr(nflux1), acc_deviceptr(nflux2) &
-           , acc_deviceptr(nflux3) &
-           , acc_deviceptr(d), acc_deviceptr(et), acc_deviceptr(mv1) &
-           , acc_deviceptr(mv2), acc_deviceptr(mv3), acc_deviceptr(b1) &
-           , acc_deviceptr(b2), acc_deviceptr(b3), acc_deviceptr(bp) &
-           , acc_deviceptr(DXcomp) &
-           , acc_deviceptr(grvsrc1), acc_deviceptr(grvsrc2) &
-           , acc_deviceptr(grvsrc3) &
-           , acc_deviceptr(x1a), acc_deviceptr(x2a), acc_deviceptr(x3a) &
+             adr(acc_deviceptr(nflux1), adr(acc_deviceptr(nflux2) &
+           , adr(acc_deviceptr(nflux3) &
+           , adr(acc_deviceptr(d), adr(acc_deviceptr(et), adr(acc_deviceptr(mv1) &
+           , adr(acc_deviceptr(mv2), adr(acc_deviceptr(mv3), adr(acc_deviceptr(b1) &
+           , adr(acc_deviceptr(b2), adr(acc_deviceptr(b3), adr(acc_deviceptr(bp) &
+           , adr(acc_deviceptr(DXcomp) &
+           , adr(acc_deviceptr(grvsrc1), adr(acc_deviceptr(grvsrc2) &
+           , adr(acc_deviceptr(grvsrc3) &
+           , adr(acc_deviceptr(x1a), adr(acc_deviceptr(x2a), adr(acc_deviceptr(x3a) &
            , real(dt, c_double) &
            , int(in, c_int), int(jn, c_int), int(kn, c_int) &
            , int(is, c_int), int(ie, c_int) &
