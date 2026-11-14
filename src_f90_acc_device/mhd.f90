@@ -112,8 +112,8 @@ module basicmod
 ! because nvfortran 26.5 refuses to IMPORT use-associated names
 ! (c_devptr, c_size_t) into interface bodies; the kinds match
 ! c_int/c_size_t/c_double on this platform.
-      use cudafor, only: c_devptr
-      use openacc, only: acc_deviceptr, acc_get_cuda_stream, acc_async_sync
+      use openacc, only: acc_deviceptr, acc_get_cuda_stream, acc_async_sync &
+           & , c_devptr
       use basicmod, only: in, jn, kn, is, js, ks, ie, je, ke, dt &
            & , x1a, x2a, x3a &
            & , d, et, mv1, mv2, mv3, b1, b2, b3, bp, p &
