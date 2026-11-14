@@ -33,7 +33,7 @@
 // StateVevtor: primitive -> state-vector conversion.
 // Fortran loops i,j,k = 1..n-1 (includes the inner ghost ring).
 // ======================================================================
-__global__ void __launch_bounds__(256, 8) statevevtor_cuda_kernel(
+__global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
     const double* __restrict__ d_, const double* __restrict__ v1_,
     const double* __restrict__ v2_, const double* __restrict__ v3_,
     const double* __restrict__ ei_, const double* __restrict__ b1_,
@@ -474,7 +474,7 @@ extern "C" int flux3_cuda(const uintptr_t svc, uintptr_t nfx, const uintptr_t ch
 // contiguous 10-field row, writes are warp-coalesced along i. Fortran
 // loops i=is..ie, j=js..je, k=ks..ke.
 // ======================================================================
-__global__ void __launch_bounds__(256, 8) updateconsv_cuda_kernel(
+__global__ void __launch_bounds__(256, 4) updateconsv_cuda_kernel(
     const double* __restrict__ nflux1, const double* __restrict__ nflux2,
     const double* __restrict__ nflux3,
     double* __restrict__ d_, double* __restrict__ et_,
