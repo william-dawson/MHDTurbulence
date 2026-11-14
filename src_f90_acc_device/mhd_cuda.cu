@@ -415,9 +415,9 @@ __global__ void flux_kernel(const double* __restrict__ svc,
     const long long b = t2 / cnt_2;
     // 0-based face coords (fi, fj, fk) and the face's cell-linear index.
     long long fi, fj, fk;
-    if (DIR == 0)      { fi = f;  fj = a;  fk = b; }
-    else if (DIR == 1) { fj = f;  fi = a;  fk = b; }
-    else               { fk = f;  fi = a;  fj = b; }
+    if (DIR == 0)      { fi = i1 - 1 + f; fj = j1 - 1 + a; fk = k1 - 1 + b; }
+    else if (DIR == 1) { fj = j1 - 1 + f; fi = i1 - 1 + a; fk = k1 - 1 + b; }
+    else               { fk = k1 - 1 + f; fi = i1 - 1 + a; fj = j1 - 1 + b; }
     const long long ci_face = fi + (long long)in_ * fj +
                               (long long)in_ * jn_ * fk;
     face_flux<DIR>(svc, nfx, ci_face, coff, chg);
