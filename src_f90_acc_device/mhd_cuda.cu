@@ -82,7 +82,7 @@ __global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
 extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const uintptr_t v2_,
     const uintptr_t v3_, const uintptr_t ei_, const uintptr_t b1_, const uintptr_t b2_,
     const uintptr_t b3_, const uintptr_t bp_, const uintptr_t xcomp_, uintptr_t p_,
-    uintptr_t svc_, double gam, int in_, int jn_, int kn_,
+    uintptr_t svc_, double gamc, double gamc1, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
   dim3 block(32, 8, 1);
   dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
@@ -92,7 +92,7 @@ extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const u
       (const double*)v3_, (const double*)ei_, (const double*)b1_,
       (const double*)b2_, (const double*)b3_, (const double*)bp_,
       (const double*)xcomp_, (double*)p_, (double*)svc_,
-      gam * (gam - 1.0), gam - 1.0, in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+      gamc, gamc1, in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
   return (int)cudaGetLastError();
 }
 
