@@ -386,8 +386,16 @@ DEVINL void face_flux(const double* __restrict__ svc,
   for (int k = 0; k < 10; ++k) q[k] = out[k];
 }
 
+#ifndef FLUX_BLOCK
+#define FLUX_BLOCK 128
+#endif
+#ifndef FLUX_MINBLOCKS
+#define FLUX_MINBLOCKS 4
+#endif
+
 template <int DIR>
-__global__ void flux_kernel(const double* __restrict__ svc,
+__global__ void __launch_bounds__(FLUX_BLOCK, FLUX_MINBLOCKS)
+flux_kernel(const double* __restrict__ svc,
                             double* __restrict__ nfx,
                             const double* __restrict__ chg_p,
                             int in_, int jn_, int kn_,
@@ -436,9 +444,9 @@ static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p
   long long cnt_3 = (DIR == 0) ? (k2 - k1 + 1) :
                     (DIR == 1) ? (k2 - k1 + 1) : (j2 - j1 + 1);
   long long total = cnt_f * cnt_2 * cnt_3;
-  int blocks = (int)((total + 255) / 256);
+  int blocks = (int)((total + FLUX_BLOCK - 1) / FLUX_BLOCK);
   cudaStream_t s = (cudaStream_t)stream;
-  flux_kernel<DIR><<<blocks, 256, 0, s>>>(
+  flux_kernel<DIR><<<blocks, FLUX_BLOCK, 0, s>>>(
       (const double*)svc, (double*)nfx, (const double*)chg_p,
       in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
   return (int)cudaGetLastError();

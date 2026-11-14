@@ -32,6 +32,8 @@ endif
 # build so the #ifdef guards resolve; with no arms the OpenACC branch
 # compiles, i.e. the default build is unchanged.
 CUDA_KERNELS ?=
+FLUX_BLOCK ?= 128
+FLUX_MINBLOCKS ?= 4
 ifeq ($(CUDA_KERNELS),1)
 CUDA_ARMS := sv uc flux
 else
@@ -73,7 +75,8 @@ updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
 gravforce.o: gravforce.f90 mhd.o mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc} -c $<
 mhd_cuda.o: mhd_cuda.cu
-	nvcc -O3 -gencode arch=compute_100,code=sm_100 -c $< -o $@
+	nvcc -O3 -lineinfo -gencode arch=compute_100,code=sm_100 \
+		-DFLUX_BLOCK=$(FLUX_BLOCK) -DFLUX_MINBLOCKS=$(FLUX_MINBLOCKS) -c $< -o $@
 boundary.o: boundary.f90 mhd.o mpiroutines.o config.o
 output.o: output.f90 boundary.o mhd.o mpiroutines.o
 main.o: main.f90 output.o boundary.o mhd.o mpiroutines.o updateconsv.o
