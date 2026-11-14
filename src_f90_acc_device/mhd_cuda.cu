@@ -389,6 +389,13 @@ DEVINL void face_flux(const double* __restrict__ svc,
 #ifndef FLUX_MINBLOCKS
 #define FLUX_MINBLOCKS 4
 #endif
+// FACES_PER_THREAD: each thread walks a contiguous strip of this many
+// faces along the face axis (the OpenACC worker-loop shape). Strips
+// let the next face's cell loads overlap the current face's HLLD and
+// serve the 3-of-4 shared stencil cells from L1.
+#ifndef FACES_PER_THREAD
+#define FACES_PER_THREAD 1
+#endif
 
 template <int DIR>
 __global__ void __launch_bounds__(FLUX_BLOCK, FLUX_MINBLOCKS)
@@ -402,6 +409,7 @@ flux_kernel(const double* __restrict__ svc,
   // on blockIdx.y/z; DIR 2 has only ~11 faces per column, so a 32x4
   // block covers i x k-face with j on blockIdx.y.
   const double chg = *chg_p;
+#if FACES_PER_THREAD == 1
   long long fi, fj, fk;
   long long coff;    // cell-linear step per face step
   if (DIR == 0) {
@@ -424,6 +432,38 @@ flux_kernel(const double* __restrict__ svc,
   const long long ci_face = fi + (long long)in_ * fj +
                             (long long)in_ * jn_ * fk;
   face_flux<DIR>(svc, nfx, ci_face, coff, chg);
+#else
+  // Strip-of-faces per thread: lane t takes faces
+  // [t*F, t*F+F) so the warp still covers one contiguous face run.
+  long long f0, a, b;
+  long long coff;    // cell-linear step per face step
+  long long nf;
+  if (DIR == 0) {
+    f0 = (long long)blockIdx.x * (FLUX_BLOCK * FACES_PER_THREAD)
+         + (long long)threadIdx.x * FACES_PER_THREAD;
+    a = blockIdx.y; b = blockIdx.z; coff = 1; nf = i2 - i1 + 1;
+  } else if (DIR == 1) {
+    f0 = (long long)blockIdx.x * (FLUX_BLOCK * FACES_PER_THREAD)
+         + (long long)threadIdx.x * FACES_PER_THREAD;
+    a = blockIdx.y; b = blockIdx.z; coff = in_; nf = j2 - j1 + 1;
+  } else {
+    f0 = (long long)blockIdx.z * (4 * FACES_PER_THREAD)
+         + (long long)threadIdx.y * FACES_PER_THREAD;
+    a = blockIdx.x * 32 + threadIdx.x; b = blockIdx.y;
+    coff = (long long)in_ * jn_; nf = k2 - k1 + 1;
+  }
+  for (int s = 0; s < FACES_PER_THREAD; ++s) {
+    const long long f = f0 + s;
+    if (f >= nf) break;
+    long long fi, fj, fk;
+    if (DIR == 0)      { fi = i1 - 1 + f; fj = j1 - 1 + a; fk = k1 - 1 + b; }
+    else if (DIR == 1) { fj = j1 - 1 + f; fi = i1 - 1 + a; fk = k1 - 1 + b; }
+    else               { fk = k1 - 1 + f; fi = i1 - 1 + a; fj = j1 - 1 + b; }
+    const long long ci_face = fi + (long long)in_ * fj +
+                              (long long)in_ * jn_ * fk;
+    face_flux<DIR>(svc, nfx, ci_face, coff, chg);
+  }
+#endif
 }
 
 template <int DIR>
@@ -434,7 +474,8 @@ static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p
   cudaStream_t s = (cudaStream_t)stream;
   if (DIR == 2) {
     dim3 block(32, 4, 1);
-    dim3 grid((i2 - i1 + 1 + 31) / 32, j2 - j1 + 1, (k2 - k1 + 1 + 3) / 4);
+    dim3 grid((i2 - i1 + 1 + 31) / 32, j2 - j1 + 1,
+              (k2 - k1 + 1 + 4 * FACES_PER_THREAD - 1) / (4 * FACES_PER_THREAD));
     flux_kernel<DIR><<<grid, block, 0, s>>>(
         (const double*)svc, (double*)nfx, (const double*)chg_p,
         in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
@@ -442,8 +483,9 @@ static int launch_flux(const uintptr_t svc, uintptr_t nfx, const uintptr_t chg_p
     const long long nf = (DIR == 0) ? (i2 - i1 + 1) : (j2 - j1 + 1);
     const long long n2 = (DIR == 0) ? (j2 - j1 + 1) : (i2 - i1 + 1);
     const long long n3 = (k2 - k1 + 1);
+    const long long pf = (long long)FLUX_BLOCK * FACES_PER_THREAD;
     dim3 block(FLUX_BLOCK, 1, 1);
-    dim3 grid((unsigned)((nf + FLUX_BLOCK - 1) / FLUX_BLOCK),
+    dim3 grid((unsigned)((nf + pf - 1) / pf),
               (unsigned)n2, (unsigned)n3);
     flux_kernel<DIR><<<grid, block, 0, s>>>(
         (const double*)svc, (double*)nfx, (const double*)chg_p,
