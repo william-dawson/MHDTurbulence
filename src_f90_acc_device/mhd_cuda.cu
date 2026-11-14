@@ -40,13 +40,21 @@ __global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
     const double* __restrict__ b2_, const double* __restrict__ b3_,
     const double* __restrict__ bp_, const double* __restrict__ xcomp_,
     double* __restrict__ p_, double* __restrict__ svc_,
-    double gam, int in_, int jn_, int kn_,
+    double gamc, double gamc1, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2) {
-  // 3D grid: x = i (32/block), y = j (8/block), z = k.
-  int i = blockIdx.x * 32 + threadIdx.x;
-  int j = blockIdx.y * 8 + threadIdx.y;
-  int k = blockIdx.z;
-  if (i <= i2 - i1 && j <= j2 - j1) {
+  // 3D grid: x = i (32/block), y = j (8/block), z = k; two i-neighbour
+  // cells per thread for memory-level parallelism (the kernel is
+  // DRAM-latency-bound at CPI ~120 with DRAM under 40% busy).
+  // gamc = gam*(gam-1) arrives precomputed so the product folds once,
+  // and the two /rho divisions share one hoisted reciprocal (one FP64
+  // division costs a ~12-instruction Newton sequence plus IEEE
+  // slow-path guards when inlined by nvcc).
+  #pragma unroll
+  for (int c = 0; c < 2; ++c) {
+    const int i = blockIdx.x * 64 + c * 32 + threadIdx.x;
+    const int j = blockIdx.y * 8 + threadIdx.y;
+    const int k = blockIdx.z;
+    if (i > i2 - i1 || j > j2 - j1) continue;
     long long ci = (long long)(i1 - 1 + i) +
                    (long long)in_ * (j1 - 1 + j) +
                    (long long)in_ * jn_ * (k1 - 1 + k);
@@ -55,20 +63,20 @@ __global__ void __launch_bounds__(256, 5) statevevtor_cuda_kernel(
     double eiv = ei_[ci];
     double b1v = b1_[ci], b2v = b2_[ci], b3v = b3_[ci], bpv = bp_[ci];
     double xv  = xcomp_[ci];
-    double g1  = gam - 1.0;
     // Scalar accesses throughout: nvfortran packs the acc declare
     // create arrays with 8-byte-granular offsets (every pointer here is
     // 8 mod 16), so 16-byte vector accesses would fault. The packer
     // offsets are not controllable from source; revisit with
     // acc_map_data if the double2 paths are ever worth restoring.
+    double inv = 1.0 / dv;
     double* q = svc_ + ci * 12;
     q[0]  = dv;   q[1]  = v1v;  q[2]  = v2v;  q[3]  = v3v;
-    q[4]  = eiv / dv;
-    q[5]  = eiv * g1;
-    q[6]  = sqrt(gam * g1 * eiv / dv);
+    q[4]  = eiv * inv;
+    q[5]  = gamc1 * eiv;
+    q[6]  = sqrt(gamc * eiv * inv);
     q[7]  = b1v;  q[8]  = b2v;  q[9]  = b3v;
     q[10] = bpv;  q[11] = xv;
-    p_[ci] = eiv * g1;
+    p_[ci] = gamc1 * eiv;
   }
 }
 
@@ -78,14 +86,14 @@ extern "C" int statevevtor_cuda(const uintptr_t d_, const uintptr_t v1_, const u
     uintptr_t svc_, double gam, int in_, int jn_, int kn_,
     int i1, int i2, int j1, int j2, int k1, int k2, uintptr_t stream) {
   dim3 block(32, 8, 1);
-  dim3 grid((i2 - i1 + 1 + 31) / 32, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
+  dim3 grid((i2 - i1 + 1 + 63) / 64, (j2 - j1 + 1 + 7) / 8, k2 - k1 + 1);
   cudaStream_t s = (cudaStream_t)stream;
   statevevtor_cuda_kernel<<<grid, block, 0, s>>>(
       (const double*)d_, (const double*)v1_, (const double*)v2_,
       (const double*)v3_, (const double*)ei_, (const double*)b1_,
       (const double*)b2_, (const double*)b3_, (const double*)bp_,
       (const double*)xcomp_, (double*)p_, (double*)svc_,
-      gam, in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
+      gam * (gam - 1.0), gam - 1.0, in_, jn_, kn_, i1, i2, j1, j2, k1, k2);
   return (int)cudaGetLastError();
 }
 

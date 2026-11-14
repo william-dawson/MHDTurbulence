@@ -126,12 +126,13 @@ module basicmod
 
       interface
       function statevevtor_cuda(d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad &
-           & , b2_ad, b3_ad, bp_ad, xc_ad, p_ad, svc_ad, gam, in_, jn_, kn_ &
+           & , b2_ad, b3_ad, bp_ad, xc_ad, p_ad, svc_ad, gamc, gamc1 &
+           & , in_, jn_, kn_ &
            & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
         implicit none
         integer(8), value :: d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad, b2_ad
         integer(8), value :: b3_ad, bp_ad, xc_ad, p_ad, svc_ad, stream_ad
-        real(8), value :: gam
+        real(8), value :: gamc, gamc1
         integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
         integer(4) :: rc
       end function statevevtor_cuda
@@ -219,7 +220,7 @@ module basicmod
            , adr(acc_deviceptr(v3)), adr(acc_deviceptr(ei)), adr(acc_deviceptr(b1)) &
            , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
            , adr(acc_deviceptr(Xcomp)), adr(acc_deviceptr(p)), adr(acc_deviceptr(svc)) &
-           , gam &
+           , gam*(gam-1.0d0), gam-1.0d0 &
            , in, jn, kn &
            , 1, in-1 &
            , 1, jn-1 &
