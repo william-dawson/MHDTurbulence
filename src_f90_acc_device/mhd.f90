@@ -100,6 +100,7 @@ module basicmod
 !$acc declare create(grvsrc1,grvsrc2,grvsrc3)
       end module fluxmod
 
+#if defined(USE_CUDA_SV) || defined(USE_CUDA_UC) || defined(USE_CUDA_FLUX)
       module cuda_kernels_f90
 ! Fortran glue for the CUDA C++ kernels in mhd_cuda.cu. Fetches device
 ! pointers for the module arrays (allocated by the OpenACC runtime via
@@ -288,6 +289,7 @@ module basicmod
       end subroutine cuda_updateconsv
 
       end module cuda_kernels_f90
+#endif
 
       subroutine ConsvVariable
       use basicmod
