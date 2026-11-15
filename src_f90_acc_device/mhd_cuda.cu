@@ -53,16 +53,23 @@ __global__ void __launch_bounds__(SV_X * SV_Y, SV_MINBLOCKS) statevevtor_cuda_ke
   const int i = blockIdx.x * SV_X + threadIdx.x;
   const int j = blockIdx.y * SV_Y + threadIdx.y;
   const int k = blockIdx.z;
-  if (i <= i2 - i1 && j <= j2 - j1) {
-    long long ci = (long long)(i1 - 1 + i) +
-                   (long long)in_ * (j1 - 1 + j) +
-                   (long long)in_ * jn_ * (k1 - 1 + k);
+  const int tx = threadIdx.x, ty = threadIdx.y;
+  const bool cellvalid = (i <= i2 - i1 && j <= j2 - j1);
+  // Direct per-thread 96-B rows split every warp store request across 2x its
+  // sectors (51.8% of 32 B used vs 91.3% for the acc kernel); staging each
+  // warp's row here and re-emitting it as six warp-contiguous 512-B stores
+  // restores full sector coverage.
+  __shared__ double2 sv_stage[SV_Y][SV_X][6];
+  const long long rowbase = (long long)in_ * (j1 - 1 + j) +
+                            (long long)in_ * jn_ * (k1 - 1 + k);
+  if (cellvalid) {
+    const long long ci = (long long)(i1 - 1 + i) + rowbase;
     double dv  = d_[ci];
     double v1v = v1_[ci], v2v = v2_[ci], v3v = v3_[ci];
     double eiv = ei_[ci];
     double b1v = b1_[ci], b2v = b2_[ci], b3v = b3_[ci], bpv = bp_[ci];
     double xv  = xcomp_[ci];
-    // Scalar accesses throughout: nvfortran packs the acc declare
+    // Scalar loads throughout: nvfortran packs the acc declare
     // create arrays with 8-byte-granular offsets (every pointer here is
     // 8 mod 16), so 16-byte vector accesses would fault. The packer
     // offsets are not controllable from source; revisit with
@@ -72,14 +79,30 @@ __global__ void __launch_bounds__(SV_X * SV_Y, SV_MINBLOCKS) statevevtor_cuda_ke
     // row is 16-B aligned, so 128-bit stores are safe (the baseline acc
     // packer aligned arrays to 8 bytes, which is why the scalar path
     // existed).
-    double2* q = (double2*)(svc_ + ci * 12);
-    q[0] = make_double2(dv, v1v);
-    q[1] = make_double2(v2v, v3v);
-    q[2] = make_double2(eiv * inv, gamc1 * eiv);
-    q[3] = make_double2(sqrt(gamc * eiv * inv), b1v);
-    q[4] = make_double2(b2v, b3v);
-    q[5] = make_double2(bpv, xv);
+    double2* s = sv_stage[ty][tx];
+    s[0] = make_double2(dv, v1v);
+    s[1] = make_double2(v2v, v3v);
+    s[2] = make_double2(eiv * inv, gamc1 * eiv);
+    s[3] = make_double2(sqrt(gamc * eiv * inv), b1v);
+    s[4] = make_double2(b2v, b3v);
+    s[5] = make_double2(bpv, xv);
     p_[ci] = gamc1 * eiv;
+  }
+  __syncthreads();
+  // Re-emit this warp's j-row: slot m = r*SV_X+tx is byte 16*m of the row's
+  // 3072 B, so each round is one contiguous 512-B warp store. Cells past
+  // i2 (partial x-block) are skipped, matching the old per-cell guard.
+  if (j <= j2 - j1) {
+    #pragma unroll
+    for (int r = 0; r < 6; ++r) {
+      const int m = r * SV_X + tx;
+      const int c = m / 6;
+      const int fp = m - 6 * c;
+      if (c <= i2 - i1) {
+        const double2 v = sv_stage[ty][c][fp];
+        *(double2*)(svc_ + ((long long)(i1 - 1 + c) + rowbase) * 12 + 2 * fp) = v;
+      }
+    }
   }
 }
 
