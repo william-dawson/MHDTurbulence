@@ -65,7 +65,7 @@ CUDA_OBJ := mhd_cuda.o
 # sm_90 on H100/Miyabi-G). The runtime lives under the nvcc-found CUDA
 # toolkit: <nvcc bindir>/../../cuda/<version>/lib64 on both machines.
 CUDA_SM ?= sm_100
-CUDA_VERSION := $(shell nvcc --version | sed -n 's/.*release \([0-9.]*\),.*//p')
+CUDA_VERSION := $(shell nvcc --version | sed -n 's/.*release \([0-9.]*\),.*/\1/p')
 CUDA_LIBDIR  := $(shell ls -d $$(dirname $$(which nvcc))/../../cuda/$(CUDA_VERSION)/lib64)
 LDLIBS += -L$(CUDA_LIBDIR) -lcudart -lstdc++
 endif
