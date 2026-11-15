@@ -1,9 +1,15 @@
       subroutine UpdateConsv
       use basicmod
       use fluxmod
+#ifdef USE_CUDA_UC
+      use cuda_kernels_f90
+#endif
       implicit none
       integer::i,j,k
 
+#ifdef USE_CUDA_UC
+      call cuda_updateconsv()
+#else
 !$acc kernels
 !$acc loop collapse(3) independent
       do k=ks,ke
@@ -116,6 +122,7 @@
       enddo
       enddo
 !$acc end kernels
+#endif
 
       return
     end subroutine UpdateConsv

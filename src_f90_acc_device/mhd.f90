@@ -96,10 +96,230 @@ module basicmod
       real(8),dimension(in,jn,kn):: grvsrc1,grvsrc2,grvsrc3
 
 !$acc declare create(chg)
+#ifndef USE_CUDA_DATA_MAP
 !$acc declare create(svc,nflux1,nflux2,nflux3)
+#endif
 !$acc declare create(grvsrc1,grvsrc2,grvsrc3)
       end module fluxmod
-      
+
+#if defined(USE_CUDA_SV) || defined(USE_CUDA_UC) || defined(USE_CUDA_FLUX)
+      module cuda_kernels_f90
+! Fortran glue for the CUDA C++ kernels in mhd_cuda.cu. Fetches device
+! pointers for the module arrays (allocated by the OpenACC runtime via
+! the module-level `!$acc declare create`) and launches on the OpenACC
+! synchronous stream so CUDA kernels, OpenACC kernels and the per-step
+! MPI exchanges stay ordered. Lives in mhd.f90 (not its own file) so
+! the module's use-associations resolve without a circular .mod
+! dependency; updateconsv.f90 compiles after mhd.o and may use it.
+! The bind(C) interfaces use explicit integer(4)/integer(8)/real(8)
+! because nvfortran 26.5 refuses to IMPORT use-associated names
+! (c_devptr, c_size_t) into interface bodies; the kinds match
+! c_int/c_size_t/c_double on this platform.
+      use cudafor
+      use openacc
+      use basicmod, only: in, jn, kn, is, js, ks, ie, je, ke, dt &
+           & , x1a, x2a, x3a &
+           & , d, et, mv1, mv2, mv3, b1, b2, b3, bp, p &
+           & , v1, v2, v3, ei, Xcomp, DXcomp
+      use fluxmod, only: nhyd, ncomp, mflx, svc, nflux1, nflux2, nflux3 &
+           & , chg, grvsrc1, grvsrc2, grvsrc3
+      use eosmod, only: gam
+      implicit none
+
+      interface
+      function statevevtor_cuda(d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad &
+           & , b2_ad, b3_ad, bp_ad, xc_ad, p_ad, svc_ad, gamc, gamc1 &
+           & , in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
+        implicit none
+        integer(8), value :: d_ad, v1_ad, v2_ad, v3_ad, ei_ad, b1_ad, b2_ad
+        integer(8), value :: b3_ad, bp_ad, xc_ad, p_ad, svc_ad, stream_ad
+        real(8), value :: gamc, gamc1
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
+      end function statevevtor_cuda
+
+      function flux1_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
+        implicit none
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
+      end function flux1_cuda
+
+      function flux2_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
+        implicit none
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
+      end function flux2_cuda
+
+      function flux3_cuda(svc_ad, nfx_ad, chg_ad, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
+        implicit none
+        integer(8), value :: svc_ad, nfx_ad, chg_ad, stream_ad
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
+      end function flux3_cuda
+
+      function updateconsv_cuda(nf1_ad, nf2_ad, nf3_ad, d_ad, et_ad, mv1_ad &
+           & , mv2_ad, mv3_ad, b1_ad, b2_ad, b3_ad, bp_ad, dxc_ad, g1_ad &
+           & , g2_ad, g3_ad, x1_ad, x2_ad, x3_ad, dtv, in_, jn_, kn_ &
+           & , i1, i2, j1, j2, k1, k2, stream_ad) bind(C) result(rc)
+        implicit none
+        integer(8), value :: nf1_ad, nf2_ad, nf3_ad, d_ad, et_ad, mv1_ad
+        integer(8), value :: mv2_ad, mv3_ad, b1_ad, b2_ad, b3_ad, bp_ad
+        integer(8), value :: dxc_ad, g1_ad, g2_ad, g3_ad, x1_ad, x2_ad, x3_ad
+        integer(8), value :: stream_ad
+        real(8), value :: dtv
+        integer(4), value :: in_, jn_, kn_, i1, i2, j1, j2, k1, k2
+        integer(4) :: rc
+      end function updateconsv_cuda
+      end interface
+
+      contains
+
+      subroutine cuda_data_map_init()
+! svc and the three flux arrays live on manually-allocated, 256-byte-
+! aligned device memory (the acc packer aligns module arrays to 8
+! bytes, blocking every 16-byte vector load/store). The OpenACC
+! runtime keeps the mapping and every acc kernel uses it transparently;
+! host-side Fortran code never touches these (device-only staging).
+        logical, save :: done = .false.
+        type(c_devptr) :: dmap
+        integer(8) :: bytes12, bytes10
+        if (done) return
+        done = .true.
+        bytes12 = int(in,8)*jn*kn*12*8
+        bytes10 = int(in,8)*jn*kn*10*8
+        dmap = acc_malloc(bytes12)
+        call acc_map_data(svc,    dmap, bytes12)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux1, dmap, bytes10)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux2, dmap, bytes10)
+        dmap = acc_malloc(bytes10)
+        call acc_map_data(nflux3, dmap, bytes10)
+        print '(a,z16.16,a,z16.16)', 'svc @', &
+             transfer(acc_deviceptr(svc), 1_8), &
+             ', nflux1 @', transfer(acc_deviceptr(nflux1), 1_8)
+      end subroutine cuda_data_map_init
+
+      function adr(cp) result(a)
+! c_devptr -> address-sized integer for the bind(C) boundary.
+        type(c_devptr), intent(in) :: cp
+        integer(8) :: a
+        a = transfer(cp, 1_8)
+      end function adr
+
+      subroutine cuda_check(rc, where)
+        integer(4), intent(in) :: rc
+        character(len=*), intent(in) :: where
+        if (rc /= 0) then
+           write(*,'(a,i0,2a)') 'CUDA launch failed (', rc, ') in ', where
+           error stop 'cuda_kernels_f90'
+        end if
+      end subroutine cuda_check
+
+      subroutine cuda_statevevtor()
+        integer(8) :: sptr
+        logical, save :: first = .true.
+        if (first) then
+           first = .false.
+! One-time alignment dump: the double2 vector paths in mhd_cuda.cu need
+! 16-byte-aligned array bases; nvfortran packs acc declare create arrays
+! and the packing offsets are not guaranteed.
+           print '(a,z16.16)', 'svc   devptr %16 = ', &
+                mod(adr(acc_deviceptr(svc)), 16_8)
+           print '(a,z16.16)', 'nflux1 devptr %16 = ', &
+                mod(adr(acc_deviceptr(nflux1)), 16_8)
+           print '(a,z16.16)', 'd     devptr %16 = ', &
+                mod(adr(acc_deviceptr(d)), 16_8)
+           print '(a,z16.16)', 'x1a   devptr %16 = ', &
+                mod(adr(acc_deviceptr(x1a)), 16_8)
+        end if
+        if (nhyd /= 12 .or. ncomp /= 1) then
+           error stop 'cuda_statevevtor: requires ncomp=1 (nhyd=12)'
+        end if
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
+        call cuda_check(statevevtor_cuda( &
+             adr(acc_deviceptr(d)), adr(acc_deviceptr(v1)), adr(acc_deviceptr(v2)) &
+           , adr(acc_deviceptr(v3)), adr(acc_deviceptr(ei)), adr(acc_deviceptr(b1)) &
+           , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
+           , adr(acc_deviceptr(Xcomp)), adr(acc_deviceptr(p)), adr(acc_deviceptr(svc)) &
+           , gam*(gam-1.0d0), gam-1.0d0 &
+           , in, jn, kn &
+           , 1, in-1 &
+           , 1, jn-1 &
+           , 1, kn-1 &
+           , sptr), 'statevevtor')
+      end subroutine cuda_statevevtor
+
+      subroutine cuda_flux1()
+        integer(8) :: sptr
+        if (mflx /= 10) error stop 'cuda_flux1: requires ncomp=1'
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
+        call cuda_check(flux1_cuda( &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(chg)) &
+           , in, jn, kn &
+           , is, ie+1 &
+           , js, je &
+           , ks, ke &
+           , sptr), 'flux1')
+      end subroutine cuda_flux1
+
+      subroutine cuda_flux2()
+        integer(8) :: sptr
+        if (mflx /= 10) error stop 'cuda_flux2: requires ncomp=1'
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
+        call cuda_check(flux2_cuda( &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux2)), adr(acc_deviceptr(chg)) &
+           , in, jn, kn &
+           , is, ie &
+           , js, je+1 &
+           , ks, ke &
+           , sptr), 'flux2')
+      end subroutine cuda_flux2
+
+      subroutine cuda_flux3()
+        integer(8) :: sptr
+        if (mflx /= 10) error stop 'cuda_flux3: requires ncomp=1'
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
+        call cuda_check(flux3_cuda( &
+             adr(acc_deviceptr(svc)), adr(acc_deviceptr(nflux3)), adr(acc_deviceptr(chg)) &
+           , in, jn, kn &
+           , is, ie &
+           , js, je &
+           , ks, ke+1 &
+           , sptr), 'flux3')
+      end subroutine cuda_flux3
+
+      subroutine cuda_updateconsv()
+        integer(8) :: sptr
+        if (ncomp /= 1) error stop 'cuda_updateconsv: requires ncomp=1'
+        sptr = int(acc_get_cuda_stream(acc_async_sync), 8)
+        call cuda_check(updateconsv_cuda( &
+             adr(acc_deviceptr(nflux1)), adr(acc_deviceptr(nflux2)) &
+           , adr(acc_deviceptr(nflux3)) &
+           , adr(acc_deviceptr(d)), adr(acc_deviceptr(et)), adr(acc_deviceptr(mv1)) &
+           , adr(acc_deviceptr(mv2)), adr(acc_deviceptr(mv3)), adr(acc_deviceptr(b1)) &
+           , adr(acc_deviceptr(b2)), adr(acc_deviceptr(b3)), adr(acc_deviceptr(bp)) &
+           , adr(acc_deviceptr(DXcomp)) &
+           , adr(acc_deviceptr(grvsrc1)), adr(acc_deviceptr(grvsrc2)) &
+           , adr(acc_deviceptr(grvsrc3)) &
+           , adr(acc_deviceptr(x1a)), adr(acc_deviceptr(x2a)), adr(acc_deviceptr(x3a)) &
+           , dt &
+           , in, jn, kn &
+           , is, ie &
+           , js, je &
+           , ks, ke &
+           , sptr), 'updateconsv')
+      end subroutine cuda_updateconsv
+
+      end module cuda_kernels_f90
+#endif
+
       subroutine ConsvVariable
       use basicmod
       implicit none
@@ -223,9 +443,15 @@ end subroutine TimestepControl
       use basicmod
       use fluxmod
       use eosmod
+#ifdef USE_CUDA_SV
+      use cuda_kernels_f90
+#endif
       implicit none
       integer::i,j,k
 
+#ifdef USE_CUDA_SV
+      call cuda_statevevtor()
+#else
 !$acc kernels
 !$acc loop collapse(3) independent
       do k=1,kn-1
@@ -235,22 +461,23 @@ end subroutine TimestepControl
          svc(i,j,k,nve1) = v1(i,j,k)
          svc(i,j,k,nve2) = v2(i,j,k)
          svc(i,j,k,nve3) = v3(i,j,k)
-         
+
          svc(i,j,k,nene) = ei(i,j,k)/d(i,j,k)
          svc(i,j,k,npre) = ei(i,j,k)*(gam-1.0d0)
          svc(i,j,k,ncsp) = sqrt(gam*(gam-1.0d0)*ei(i,j,k)/d(i,j,k))
          p(i,j,k) = svc(i,j,k,npre)  ! for output boundary
-         
+
          svc(i,j,k,nbm1) = b1(i,j,k)
          svc(i,j,k,nbm2) = b2(i,j,k)
          svc(i,j,k,nbm3) = b3(i,j,k)
          svc(i,j,k,nbps) = bp(i,j,k)
          svc(i,j,k,nst:ned) = Xcomp(1:ncomp,i,j,k)
-            
+
       enddo
       enddo
       enddo
 !$acc end kernels
+#endif
 
       return
       end subroutine StateVevtor
@@ -316,6 +543,9 @@ end subroutine TimestepControl
       subroutine NumericalFlux1
       use basicmod, only: is,ie,in,js,je,jn,ks,ke,kn
       use fluxmod
+#ifdef USE_CUDA_FLUX
+      use cuda_kernels_f90
+#endif
       implicit none
       integer::i,j,k
       real(8),dimension(nhyd):: dsvp,dsvm,dsvc,dsv
@@ -324,8 +554,11 @@ end subroutine TimestepControl
       real(8),dimension(2*mflx+madd):: leftco,rigtco
       real(8),dimension(mflx):: nflux
       real(8):: ptl,css,cts,etot
-      
-!$acc kernels      
+
+#ifdef USE_CUDA_FLUX
+      call cuda_flux1()
+#else
+!$acc kernels
 !$acc loop collapse(3) independent private(i, Pleftc1, Pleftc2, Plefte,Prigtc1, Prigtc2, Prigte,dsv,dsvp,dsvm,etot,ptl,css,cts,leftco,rigtco,nflux)
       do k=ks,ke
       do j=js,je
@@ -501,6 +734,7 @@ end subroutine TimestepControl
       enddo
       enddo
 !$acc end kernels
+#endif
 
       return
       end subroutine Numericalflux1
@@ -508,6 +742,9 @@ end subroutine TimestepControl
       subroutine NumericalFlux2
       use basicmod, only: is,ie,in,js,je,jn,ks,ke,kn
       use fluxmod
+#ifdef USE_CUDA_FLUX
+      use cuda_kernels_f90
+#endif
       implicit none
 ! | Pleftc1   | Pleftc2 | Prigtc1   | Prigtc2   |        
 !                     You are here               
@@ -519,6 +756,9 @@ end subroutine TimestepControl
       real(8),dimension(mflx):: nflux
       real(8):: ptl,css,cts,etot
 
+#ifdef USE_CUDA_FLUX
+      call cuda_flux2()
+#else
 !$acc kernels
 !$acc loop collapse(3) independent private(j, Pleftc1, Pleftc2, Plefte,Prigtc1, Prigtc2, Prigte,dsv,dsvp,dsvm,etot,ptl,css,cts,leftco,rigtco,nflux)
       do k=ks,ke
@@ -688,6 +928,7 @@ end subroutine TimestepControl
       enddo
       enddo
 !$acc end kernels
+#endif
       
       return
       end subroutine Numericalflux2
@@ -695,6 +936,9 @@ end subroutine TimestepControl
       subroutine NumericalFlux3
       use basicmod, only: is,ie,in,js,je,jn,ks,ke,kn
       use fluxmod
+#ifdef USE_CUDA_FLUX
+      use cuda_kernels_f90
+#endif
       implicit none
       integer::i,j,k
       real(8),dimension(nhyd):: dsvp,dsvm,dsvc,dsv
@@ -704,6 +948,9 @@ end subroutine TimestepControl
       real(8),dimension(mflx):: nflux
       real(8):: ptl,css,cts,etot
 
+#ifdef USE_CUDA_FLUX
+      call cuda_flux3()
+#else
 !$acc kernels
 !$acc loop collapse(2) independent private(k, Pleftc1, Pleftc2, Plefte,Prigtc1, Prigtc2, Prigte,dsv,dsvp,dsvm,etot,ptl,css,cts,leftco,rigtco,nflux)
       do j=js,je
@@ -873,6 +1120,7 @@ end subroutine TimestepControl
       enddo
       enddo
 !$acc end kernels
+#endif
 
       return
       end subroutine Numericalflux3
@@ -1450,53 +1698,7 @@ end subroutine TimestepControl
       return
       end subroutine HLLD
 
-      subroutine GravForce
-      use basicmod
-      use fluxmod
-      implicit none
-      integer :: i,j,k,n
 
-!$acc kernels
-!$acc loop collapse(3) independent
-      do k=ks,ke
-      do j=js,je
-      do i=is,ie+1
-         gp1a(i  ,j,k) = gp(i,j,k) &
-     & - 0.5d0*(gp(i  ,j,k)-gp(i-1,j,k))
-
-         gp1a(i+1,j,k) = gp(i,j,k) &
-     & + 0.5d0*(gp(i+1,j,k)-gp(i  ,j,k))
-
-       grvsrc1(i,j,k) = (gp1a(i+1,j,k)-gp1a(i,j,k))/(x1a(i+1)-x1a(i))*d(i,j,k)
-
-      enddo
-      enddo
-      enddo
-!$acc end kernels
-      
-!$acc kernels
-!$acc loop collapse(3) independent
-      do k=ks,ke
-      do i=is,ie
-      do j=js,je+1
-       grvsrc2(i,j,k) = 0.0d0
-      enddo
-      enddo
-      enddo
-!$acc end kernels
-      
-!$acc kernels
-!$acc loop collapse(3) independent
-      do j=js,je
-      do i=is,ie
-      do k=ks,ke+1
-         grvsrc3(i,j,k) = 0.0d0
-      enddo
-      enddo
-      enddo
-!$acc end kernels
-      return
-      end subroutine  GravForce
     
 ! UpdateConsv moved to updateconsv.f90 (separate compilation unit,
 ! independent -gpu=maxregcount) -- see mhdturbulence-optimization-ideas.

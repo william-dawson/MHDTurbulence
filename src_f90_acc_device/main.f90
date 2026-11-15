@@ -4,6 +4,9 @@ program main
   use basicmod
   use mpimod
   use boundarymod
+#if defined(USE_CUDA_SV) || defined(USE_CUDA_UC) || defined(USE_CUDA_FLUX)
+  use cuda_kernels_f90
+#endif
   use config, only: benchmarkmode
   implicit none
   real(8)::time_begin,time_end
@@ -17,6 +20,9 @@ program main
   if(myid_w == 0 .and. benchmarkmode ) print *, "Only initial and final snaps are dampped. Intermediate steps are not damped for benchmark."
   call GenerateGrid
   call GenerateProblem
+#if defined(USE_CUDA_SV) || defined(USE_CUDA_UC) || defined(USE_CUDA_FLUX)
+  call cuda_data_map_init()
+#endif
   call ConsvVariable
   call RealTimeAnalysis
   call Output(forceoutput)  
