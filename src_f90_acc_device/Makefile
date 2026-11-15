@@ -61,7 +61,11 @@ CPPDEFS += -DUSE_CUDA_DATA_MAP
 endif
 ifneq ($(strip $(CPPDEFS)),)
 CUDA_OBJ := mhd_cuda.o
-CUDA_LIBDIR := $(shell dirname $$(dirname $$(which nvcc)))/../cuda/13.2/targets/sbsa-linux/lib
+# CUDA_SM: target architecture for the CUDA kernels (sm_100 on B200/Rikyu,
+# sm_90 on H100/Miyabi-G). libcudart's directory is resolved from nvcc itself
+# rather than a hardcoded toolkit layout.
+CUDA_SM ?= sm_100
+CUDA_LIBDIR := $(shell dirname $$(nvcc -print-file-name=libcudart.so))
 LDLIBS += -L$(CUDA_LIBDIR) -lcudart -lstdc++
 endif
 
@@ -85,7 +89,7 @@ updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
 gravforce.o: gravforce.f90 mhd.o mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc} -c $<
 mhd_cuda.o: mhd_cuda.cu
-	nvcc -O3 -lineinfo -gencode arch=compute_100,code=sm_100 \
+	nvcc -O3 -lineinfo -gencode arch=compute_$(subst sm_,compute_,$(CUDA_SM)),code=$(CUDA_SM) \
 		-DFLUX_BLOCK=$(FLUX_BLOCK) -DFLUX_MINBLOCKS=$(FLUX_MINBLOCKS) \
 		-DFACES_PER_THREAD=$(FACES_PER_THREAD) \
 		-DUC_X=$(UC_X) -DUC_Y=$(UC_Y) -DUC_MINBLOCKS=$(UC_MINBLOCKS) \
