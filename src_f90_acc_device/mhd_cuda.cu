@@ -430,7 +430,8 @@ DEVINL void face_flux(const double* __restrict__ svc,
 #define SV_Y 16
 #endif
 #ifndef SV_MINBLOCKS
-#define SV_MINBLOCKS 4
+/* @ 4 launch-bounds caps sm_90 at 32 regs/thread and spills to local memory */
+#define SV_MINBLOCKS 2
 #endif
 #ifndef FACES_PER_THREAD
 #define FACES_PER_THREAD 1

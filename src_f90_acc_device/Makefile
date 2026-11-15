@@ -40,7 +40,8 @@ UC_Y ?= 8
 UC_MINBLOCKS ?= 5
 SV_X ?= 32
 SV_Y ?= 16
-SV_MINBLOCKS ?= 4
+# @ 4 launch-bounds caps sm_90 at 32 regs/thread and spills to local memory
+SV_MINBLOCKS ?= 2
 ifeq ($(CUDA_KERNELS),1)
 CUDA_ARMS := sv uc flux
 else
