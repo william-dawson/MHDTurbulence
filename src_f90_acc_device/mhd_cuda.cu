@@ -98,9 +98,10 @@ __global__ void __launch_bounds__(SV_X * SV_Y, SV_MINBLOCKS) statevevtor_cuda_ke
       const int m = r * SV_X + tx;
       const int c = m / 6;
       const int fp = m - 6 * c;
-      if (c <= i2 - i1) {
+      const int gi = blockIdx.x * SV_X + c;
+      if (gi <= i2 - i1) {
         const double2 v = sv_stage[ty][c][fp];
-        *(double2*)(svc_ + ((long long)(i1 - 1 + c) + rowbase) * 12 + 2 * fp) = v;
+        *(double2*)(svc_ + ((long long)(i1 - 1 + gi) + rowbase) * 12 + 2 * fp) = v;
       }
     }
   }
