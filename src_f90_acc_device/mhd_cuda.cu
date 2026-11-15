@@ -412,16 +412,25 @@ DEVINL void face_flux(const double* __restrict__ svc,
 #define UC_Y 8
 #endif
 #ifndef UC_MINBLOCKS
+#define UC_MINBLOCKS 5
+#endif
+#ifndef SV_X
+#define SV_X 32
+#endif
+#ifndef UC_Y
+#define UC_Y 8
+#endif
+#ifndef UC_MINBLOCKS
 #define UC_MINBLOCKS 4
 #endif
 #ifndef SV_X
 #define SV_X 32
 #endif
 #ifndef SV_Y
-#define SV_Y 8
+#define SV_Y 16
 #endif
 #ifndef SV_MINBLOCKS
-#define SV_MINBLOCKS 5
+#define SV_MINBLOCKS 4
 #endif
 #ifndef FACES_PER_THREAD
 #define FACES_PER_THREAD 1

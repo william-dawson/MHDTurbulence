@@ -89,7 +89,7 @@ updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
 gravforce.o: gravforce.f90 mhd.o mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc} -c $<
 mhd_cuda.o: mhd_cuda.cu
-	nvcc -O3 -lineinfo -gencode arch=compute_$(subst sm_,compute_,$(CUDA_SM)),code=$(CUDA_SM) \
+	nvcc -O3 -lineinfo -gencode arch=$(subst sm_,compute_,$(CUDA_SM)),code=$(CUDA_SM) \
 		-DFLUX_BLOCK=$(FLUX_BLOCK) -DFLUX_MINBLOCKS=$(FLUX_MINBLOCKS) \
 		-DFACES_PER_THREAD=$(FACES_PER_THREAD) \
 		-DUC_X=$(UC_X) -DUC_Y=$(UC_Y) -DUC_MINBLOCKS=$(UC_MINBLOCKS) \
