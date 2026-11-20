@@ -1,6 +1,9 @@
 module mpimod
   use config, only: ntiles, periodic
   use mpi
+#ifdef USE_NCCL_REDUCTIONS
+  use mht_nccl, only: mht_nccl_start, mht_nccl_finish, mht_nccl_reduce
+#endif
   implicit none
   integer, parameter :: mreq  = 300
   integer :: stat(MPI_STATUS_SIZE,mreq)                     
@@ -82,11 +85,17 @@ subroutine InitializeMPI
      call acc_set_device_num(gpuid, acc_device_nvidia)
   end if
 !$acc update device (myid_w)
+#ifdef USE_NCCL_REDUCTIONS
+  if (nprocs > 1) call mht_nccl_start(comm3d, nprocs, myid)
+#endif
   return
 end subroutine InitializeMPI
 
 subroutine FinalizeMPI
   implicit none
+#ifdef USE_NCCL_REDUCTIONS
+  if (nprocs > 1) call mht_nccl_finish(comm3d)
+#endif
   call MPI_FINALIZE(ierr)
 end subroutine FinalizeMPI
 
@@ -99,6 +108,9 @@ subroutine MPIminfind
      bufoutmin = bufinpmin
 !$acc end serial
   else
+#ifdef USE_NCCL_REDUCTIONS
+     call mht_nccl_reduce(bufinpmin, bufoutmin, .true., comm3d)
+#else
      ! Host staging gives the scalar pair the host MPI reduction path.
 !$acc update self(bufinpmin)
      call MPI_ALLREDUCE(bufinpmin(1), bufoutmin(1), 1, &
@@ -109,6 +121,7 @@ subroutine MPIminfind
         call MPI_ABORT(comm3d, 1, ierr)
      endif
 !$acc update device(bufoutmin)
+#endif
   endif
 end subroutine MPIminfind
 
@@ -121,6 +134,9 @@ subroutine MPImaxfind
      bufoutmax = bufinpmax
 !$acc end serial
   else
+#ifdef USE_NCCL_REDUCTIONS
+     call mht_nccl_reduce(bufinpmax, bufoutmax, .false., comm3d)
+#else
      ! Host staging gives the scalar pair the host MPI reduction path.
 !$acc update self(bufinpmax)
      call MPI_ALLREDUCE(bufinpmax(1), bufoutmax(1), 1, &
@@ -131,6 +147,7 @@ subroutine MPImaxfind
         call MPI_ABORT(comm3d, 1, ierr)
      endif
 !$acc update device(bufoutmax)
+#endif
   endif
 end subroutine MPImaxfind
 

@@ -76,10 +76,20 @@ endif
 .f90.o:
 	${fc} ${fopt} ${foptopenacc} -c $<
 
-OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o gravforce.o $(CUDA_OBJ)
+NCCL_REDUCTIONS ?= 0
+ifeq ($(NCCL_REDUCTIONS),1)
+NCCL_OBJ := mht_nccl.o
+NCCL_FLAGS := -cuda -cudalib=nccl
+NCCL_DEFS := -DUSE_NCCL_REDUCTIONS
+endif
+
+OBJS = main.o output.o boundary.o mhd.o mpiroutines.o config.o updateconsv.o gravforce.o $(CUDA_OBJ) $(NCCL_OBJ)
 
 config.o: config.f90
-mpiroutines.o: mpiroutines.f90 config.o
+mht_nccl.o: mht_nccl.f90
+	${fc} ${fopt} ${foptopenacc} ${NCCL_FLAGS} -c $<
+mpiroutines.o: mpiroutines.f90 config.o ${NCCL_OBJ}
+	${fc} ${fopt} ${foptopenacc} -Mpreprocess ${NCCL_DEFS} -c $<
 mhd.o: mhd.f90 mpiroutines.o config.o
 	${fc} ${fopt} ${foptopenacc} -Mpreprocess ${CPPDEFS} -c $<
 updateconsv.o: updateconsv.f90 mhd.o mpiroutines.o config.o
@@ -102,7 +112,7 @@ main.o: main.f90 output.o boundary.o mhd.o mpiroutines.o updateconsv.o
 	${fc} ${fopt} ${foptopenacc} -Mpreprocess ${CPPDEFS} -c $<
 
 ${exed}/${exe}: ${OBJS}
-	${fc} ${fopt} ${foptopenacc} ${OBJS} -o $@ ${LDLIBS}
+	${fc} ${fopt} ${foptopenacc} ${NCCL_FLAGS} ${OBJS} -o $@ ${LDLIBS}
 
 #################
 # clean up

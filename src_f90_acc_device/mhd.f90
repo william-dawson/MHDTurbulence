@@ -402,7 +402,6 @@ subroutine TimestepControl
   real(8)::dtl3
   real(8)::dtlocal
   real(8)::dtmin
-  integer::theid
   real(8)::ctot
   integer::i,j,k
 
@@ -431,7 +430,6 @@ subroutine TimestepControl
   call MPIminfind
 !$acc kernels
   dtmin =     bufoutmin(1)
-  theid = int(bufoutmin(2))
   dt = 0.05d0 * dtmin
 !$acc end kernels
 !$acc update host (dt)
@@ -1714,7 +1712,6 @@ subroutine EvaulateCh
   real(8):: ch1l,ch2l,ch3l,chl,chd
   real(8):: cts,css,cms
   real(8),parameter:: huge=1.0d90
-  integer::theid
 
 !$acc kernels
   chd = 0.0d0
@@ -1756,7 +1753,6 @@ subroutine EvaulateCh
   call MPImaxfind
 !$acc kernels
   chd = bufoutmax(1)
-  theid = int(bufoutmax(2)) 
   chg      =      chd
 !$acc end kernels
   
