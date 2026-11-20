@@ -94,30 +94,44 @@ subroutine MPIminfind
   implicit none
   integer :: err_len
   character(len=MPI_MAX_ERROR_STRING) :: err_string
-!$acc host_data use_device(bufinpmin,bufoutmin)
-       call MPI_ALLREDUCE( bufinpmin(1), bufoutmin(1), 1 &
-     &                   , MPI_2DOUBLE_PRECISION   &
-     &                   , MPI_MINLOC, comm3d, ierr)      
-!$acc end host_data
-       if (ierr /= MPI_SUCCESS) then
-          call MPI_Error_string(ierr, err_string, err_len, ierr)
-          print *,"error in MPIminfind", trim(err_string)
-       endif
+  if (nprocs == 1) then
+!$acc serial
+     bufoutmin = bufinpmin
+!$acc end serial
+  else
+     ! Host staging gives the scalar pair the host MPI reduction path.
+!$acc update self(bufinpmin)
+     call MPI_ALLREDUCE(bufinpmin(1), bufoutmin(1), 1, &
+          MPI_2DOUBLE_PRECISION, MPI_MINLOC, comm3d, ierr)
+     if (ierr /= MPI_SUCCESS) then
+        call MPI_Error_string(ierr, err_string, err_len, ierr)
+        print *, "error in MPIminfind", trim(err_string)
+        call MPI_ABORT(comm3d, 1, ierr)
+     endif
+!$acc update device(bufoutmin)
+  endif
 end subroutine MPIminfind
 
 subroutine MPImaxfind
   implicit none
   integer :: err_len
   character(len=MPI_MAX_ERROR_STRING) :: err_string
-!$acc host_data use_device(bufinpmax,bufoutmax)
-       call MPI_ALLREDUCE( bufinpmax(1), bufoutmax(1), 1 &
-     &                   , MPI_2DOUBLE_PRECISION   &
-     &                   , MPI_MAXLOC, comm3d, ierr)
-!$acc end host_data
-       if (ierr /= MPI_SUCCESS) then
-          call MPI_Error_string(ierr, err_string, err_len, ierr)
-          print *,"error in MPIminfind", trim(err_string)
-       endif
+  if (nprocs == 1) then
+!$acc serial
+     bufoutmax = bufinpmax
+!$acc end serial
+  else
+     ! Host staging gives the scalar pair the host MPI reduction path.
+!$acc update self(bufinpmax)
+     call MPI_ALLREDUCE(bufinpmax(1), bufoutmax(1), 1, &
+          MPI_2DOUBLE_PRECISION, MPI_MAXLOC, comm3d, ierr)
+     if (ierr /= MPI_SUCCESS) then
+        call MPI_Error_string(ierr, err_string, err_len, ierr)
+        print *, "error in MPImaxfind", trim(err_string)
+        call MPI_ABORT(comm3d, 1, ierr)
+     endif
+!$acc update device(bufoutmax)
+  endif
 end subroutine MPImaxfind
 
 subroutine GetMPIsum(n,bufl,bufg)
